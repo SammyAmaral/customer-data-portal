@@ -35,6 +35,9 @@ export const CF = {
   projectStatus: 'customfield_13671',
   solutionArchitect: 'customfield_13312',
   volumeBand: 'customfield_13586',
+  spiderName: 'customfield_14219',        // Scrapy Cloud spider name (naming convention)
+  jobLinkFull: 'customfield_14250',       // "Job Link(s)" — full-crawl app.zyte.com/p/{proj}/{spider}/{job}
+  jobLinkSample: 'customfield_14251',     // "Sampling Job Link(s)"
   subscriptionPrice: 'customfield_13599', // per-feed price (sums to the Epic MRR Value)
   setupFee: 'customfield_13710',
   mrrValue: 'customfield_13667',          // total monthly subscription
@@ -65,7 +68,10 @@ export const EPIC_DETAIL_FIELDS = [
 
 export const CHILD_FIELDS = ['summary', 'status', 'issuetype', 'created', 'resolutiondate'];
 // Extra per-feed fields for the Data Feed Status table (start/due/volume band).
-export const FEED_FIELDS = [...CHILD_FIELDS, CF.startDate, 'duedate', CF.volumeBand, CF.subscriptionPrice];
+export const FEED_FIELDS = [
+  ...CHILD_FIELDS, CF.startDate, 'duedate', CF.volumeBand, CF.subscriptionPrice,
+  CF.spiderName, CF.jobLinkFull, CF.jobLinkSample,
+];
 
 /* ---- ADF / value helpers ------------------------------------------------ */
 export function adfText(n) {
@@ -324,6 +330,9 @@ export function mapFeed(issue, histories, asOf) {
   const { firstSampleSent, sampleApproved } = sampleDatesFromChangelog(histories);
   const created = f.created || null;
   const end = sampleApproved || f.resolutiondate || asOf;
+  // Scrapy Cloud linkage: project id comes from a job link, spider from the name field.
+  const jobLink = adfText(f[CF.jobLinkFull]) || adfText(f[CF.jobLinkSample]) || '';
+  const jm = jobLink.match(/\/p\/(\d+)\/(\d+)\/(\d+)/);
   return {
     key: issue.key,
     name: stripPrefix(f.summary) || issue.key,
@@ -336,5 +345,8 @@ export function mapFeed(issue, histories, asOf) {
     volumeBand: selectValue(f[CF.volumeBand]),
     subscriptionPrice: num(f[CF.subscriptionPrice]),
     daysOpen: created ? businessDaysBetween(created, end) : null,
+    spiderName: cleanText(f[CF.spiderName]) || null,
+    scProject: jm ? jm[1] : null,
+    scJobKey: jm ? `${jm[1]}/${jm[2]}/${jm[3]}` : null,
   };
 }

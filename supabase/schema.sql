@@ -51,6 +51,24 @@ create table if not exists sow_pricing (
 alter table sow_pricing enable row level security;
 -- (No policies — service-role only, same as report_access.)
 
+-- =========================================================================
+-- scrapy_jobs — cache of the latest Scrapy Cloud job per (project:spider),
+-- so the report doesn't hit the HubStorage API on every load (see api/scrapy.js).
+-- Refreshed hourly. Service-role only.
+-- =========================================================================
+create table if not exists scrapy_jobs (
+  key           text primary key,          -- "{project}:{spiderName}"
+  epic_key      text,
+  records       bigint,
+  state         text,
+  close_reason  text,
+  errors        integer,
+  finished_at   date,
+  fetched_at    timestamptz not null default now()
+);
+alter table scrapy_jobs enable row level security;
+-- (No policies — service-role only.)
+
 -- -------------------------------------------------------------------------
 -- Example seed (uncomment + edit). Keep emails lower-case.
 -- -------------------------------------------------------------------------

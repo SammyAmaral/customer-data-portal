@@ -44,6 +44,8 @@ export default function Report({ epicKey }) {
   const pricedFeeds = feeds.filter((f) => f.subscriptionPrice != null);
   const pricedSum = pricedFeeds.reduce((s, f) => s + f.subscriptionPrice, 0);
   const missingPrice = feeds.length - pricedFeeds.length;
+  const totalRecords = feeds.reduce((s, f) => s + (f.records || 0), 0);
+  const unhealthyJobs = feeds.filter((f) => f.jobState && !f.jobHealthy).length;
   const c = data.commercial || {};
   const hasCommercial = c.setupFee != null || c.mrrValue != null || c.totalContractValue != null || pricedFeeds.length > 0;
 
@@ -83,6 +85,7 @@ export default function Report({ epicKey }) {
             <dt>Start date</dt><dd>{fmtDate(data.startDate)}</dd>
             <dt>Planned finish</dt><dd>{fmtDate(data.plannedFinish)}</dd>
             <dt>Data feeds</dt><dd>{data.feedCount}</dd>
+            {totalRecords > 0 && (<><dt>Records delivered</dt><dd>{fmtMoney(totalRecords)}</dd></>)}
             {data.effortRag && (<><dt>Effort RAG</dt><dd><Light rag={data.effortRag} /></dd></>)}
           </dl>
           {data.internal && data.internal.links && data.internal.links.length > 0 && (
@@ -161,7 +164,7 @@ export default function Report({ epicKey }) {
               <table className="cdp-table">
                 <thead>
                   <tr>
-                    <th>Feed</th><th>Status</th><th>Volume band</th><th>Subscription</th>
+                    <th>Feed</th><th>Status</th><th>Volume band</th><th>Records</th><th>Subscription</th>
                     <th>Start date</th><th>1st sample sent</th><th>Sample approved</th><th>Due date</th>
                     <th>Days open</th>
                   </tr>
@@ -171,10 +174,13 @@ export default function Report({ epicKey }) {
                     const ft = feedToken(f.bucket);
                     return (
                       <tr key={f.key}>
-                        <td className="cdp-feedname">{f.name}</td>
+                        <td className="cdp-feedname">{f.name}{f.jobState && (
+                          <span className="cdp-jobdot" title={jobTitle(f)} style={{ background: jobColor(f) }} />
+                        )}</td>
                         <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
                           <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
                         <td className="center">{f.volumeBand ? <span className="cdp-band">{f.volumeBand}</span> : '—'}</td>
+                        <td className="center">{f.records != null ? fmtMoney(f.records) : '—'}</td>
                         <td className="center">{f.subscriptionPrice != null
                           ? <>{fmtMoney(f.subscriptionPrice)}{f.priceSource === 'sow' && <span className="cdp-src" title="Filled from the SOW">SOW</span>}</>
                           : '—'}</td>
@@ -190,9 +196,28 @@ export default function Report({ epicKey }) {
               </table>
             </div>
           ) : <div className="cdp-empty">No data feeds recorded on this engagement yet.</div>}
+          {unhealthyJobs > 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--rag-red)', fontWeight: 600 }}>
+              ⚠ {unhealthyJobs} feed{unhealthyJobs > 1 ? 's' : ''} with a crawl job that didn’t finish cleanly
+            </div>
+          )}
       </div>
     </div>
   );
+}
+
+function jobColor(f) {
+  if (f.jobHealthy) return 'var(--rag-green)';
+  if (f.jobState === 'running' || f.jobState === 'pending') return 'var(--amber)';
+  return 'var(--rag-red)';
+}
+function jobTitle(f) {
+  const parts = [`Crawl job: ${f.jobState || 'unknown'}`];
+  if (f.jobCloseReason && f.jobCloseReason !== f.jobState) parts.push(f.jobCloseReason);
+  if (f.records != null) parts.push(`${Number(f.records).toLocaleString('en-US')} records`);
+  if (f.jobFinished) parts.push(`finished ${f.jobFinished}`);
+  if (f.jobErrors) parts.push(`${f.jobErrors} error${f.jobErrors > 1 ? 's' : ''}`);
+  return parts.join(' · ');
 }
 
 function Person({ role, name, email }) {

@@ -15,6 +15,7 @@ import {
   EPIC_DETAIL_FIELDS, FEED_FIELDS, CF, firstLink, mapEpicDetail, mapFeed, derivePhase, PHASES,
 } from './_map.js';
 import { getSowPricing, domainKey } from './sow.js';
+import { enrichFeeds } from './scrapy.js';
 
 const MAX_CHANGELOG_FEEDS = 80; // safety cap on per-feed changelog fetches
 
@@ -80,6 +81,13 @@ export default async function handler(req, res) {
       } catch { sowStatus = 'error'; }
     }
 
+    // Enrich feeds with live Scrapy Cloud crawl telemetry (best-effort).
+    let scrapyStatus = null;
+    try {
+      const sc = await enrichFeeds(key, feeds);
+      scrapyStatus = sc.status;
+    } catch (e) { scrapyStatus = 'error'; }
+
     const kickoffDone = tasks.some((t) =>
       /kickoff|solution design/i.test((t.fields.summary) || '') &&
       /done|complete|closed/i.test(t.fields.status ? t.fields.status.name : ''));
@@ -91,6 +99,7 @@ export default async function handler(req, res) {
     detail.feedCount = feeds.length;
     detail.phase = { index: phaseIndex, steps: PHASES };
     detail.sowPricingStatus = sowStatus;
+    detail.scrapyStatus = scrapyStatus;
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     res.status(200).json(detail);
