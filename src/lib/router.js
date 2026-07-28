@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 
 export function parseHash() {
   const h = (window.location.hash || '').replace(/^#/, '');
+  const t = h.match(/^\/tech\/([A-Za-z][A-Za-z0-9]+-\d+)/);
+  if (t) return { name: 'tech', key: t[1].toUpperCase() };
   const m = h.match(/^\/report\/([A-Za-z][A-Za-z0-9]+-\d+)/);
   if (m) return { name: 'report', key: m[1].toUpperCase() };
   return { name: 'portfolio' };

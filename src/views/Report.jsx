@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { fmtDate, fmtMoney, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
@@ -70,6 +70,9 @@ export default function Report({ epicKey }) {
           <button className="cdp-btn cdp-btn-ghost" onClick={() => setNonce((n) => n + 1)}><RefreshCw size={15} /> Refresh</button>
           <button className="cdp-btn cdp-btn-ghost" onClick={copyLink}><Link2 size={15} /> {copied ? 'Link copied' : 'Copy share link'}</button>
           <button className="cdp-btn cdp-btn-ghost" onClick={() => window.print()}><Printer size={15} /> Export PDF</button>
+          {data.internal && (
+            <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/tech/${data.key}`)}><Wrench size={15} /> Technical view</button>
+          )}
           {data.internal && data.webUrl && (
             <a className="cdp-btn cdp-btn-ghost" href={data.webUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Open in Jira</a>
           )}

@@ -39,6 +39,22 @@ export const CF = {
   jobLinkFull: 'customfield_14250',       // "Job Link(s)" — full-crawl app.zyte.com/p/{proj}/{spider}/{job}
   jobLinkSample: 'customfield_14251',     // "Sampling Job Link(s)"
   subscriptionPrice: 'customfield_13599', // per-feed price (sums to the Epic MRR Value)
+  // --- technical config (internal Technical View) ---
+  feedSchema: 'customfield_13726',        // Feed Schema (bitbucket JSON schema link)
+  deliveryFrequency: 'customfield_13585', // Monthly / Weekly / Daily / …
+  deliveryFormat: 'customfield_13566',    // JSON / CSV / …
+  dataType: 'customfield_13958',          // Product / Review / …
+  region: 'customfield_13959',            // BR / US / …
+  crawlerType: 'customfield_13717',       // Full Crawl / Incremental / …
+  antibot: 'customfield_13600',           // Akamai / …
+  antibotComplexity: 'customfield_13601',
+  extractionComplexity: 'customfield_13603',
+  crawlingComplexity: 'customfield_13602',
+  maintenanceComplexity: 'customfield_13718',
+  requestRatio: 'customfield_13918',      // Request-to-Record Ratio
+  postProcessing: 'customfield_13587',
+  zyteProducts: 'customfield_13584',      // Zyte API / …
+  outputType: 'customfield_13917',
   setupFee: 'customfield_13710',
   mrrValue: 'customfield_13667',          // total monthly subscription
   mrrPeriods: 'customfield_13668',        // contract length (months)
@@ -71,6 +87,10 @@ export const CHILD_FIELDS = ['summary', 'status', 'issuetype', 'created', 'resol
 export const FEED_FIELDS = [
   ...CHILD_FIELDS, CF.startDate, 'duedate', CF.volumeBand, CF.subscriptionPrice,
   CF.spiderName, CF.jobLinkFull, CF.jobLinkSample,
+  CF.feedSchema, CF.deliveryFrequency, CF.deliveryFormat, CF.dataType, CF.region,
+  CF.crawlerType, CF.antibot, CF.antibotComplexity, CF.extractionComplexity,
+  CF.crawlingComplexity, CF.maintenanceComplexity, CF.requestRatio, CF.postProcessing,
+  CF.zyteProducts, CF.outputType,
 ];
 
 /* ---- ADF / value helpers ------------------------------------------------ */
@@ -348,5 +368,22 @@ export function mapFeed(issue, histories, asOf) {
     spiderName: cleanText(f[CF.spiderName]) || null,
     scProject: jm ? jm[1] : null,
     scJobKey: jm ? `${jm[1]}/${jm[2]}/${jm[3]}` : null,
+    config: {
+      schema: firstLink(f[CF.feedSchema]),
+      frequency: selectValue(f[CF.deliveryFrequency]),
+      format: selectValue(f[CF.deliveryFormat]),
+      dataType: selectValue(f[CF.dataType]),
+      region: cleanText(f[CF.region]) || null,
+      crawlerType: selectValue(f[CF.crawlerType]),
+      antibot: cleanText(f[CF.antibot]) || null,
+      antibotComplexity: cleanText(f[CF.antibotComplexity]) || null,
+      extractionComplexity: cleanText(f[CF.extractionComplexity]) || null,
+      crawlingComplexity: cleanText(f[CF.crawlingComplexity]) || null,
+      maintenanceComplexity: cleanText(adfText(f[CF.maintenanceComplexity])) || null,
+      requestRatio: cleanText(adfText(f[CF.requestRatio])) || null,
+      postProcessing: selectValue(f[CF.postProcessing]),
+      zyteProducts: selectValue(f[CF.zyteProducts]),
+      outputType: selectValue(f[CF.outputType]),
+    },
   };
 }

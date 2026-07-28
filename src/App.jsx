@@ -5,6 +5,7 @@ import { useHashRoute, navigate } from './lib/router.js';
 import SignIn from './views/SignIn.jsx';
 import Portfolio from './views/Portfolio.jsx';
 import Report from './views/Report.jsx';
+import TechView from './views/TechView.jsx';
 
 export const RETURN_KEY = 'cdp_return';
 
@@ -36,6 +37,8 @@ export default function App() {
     body = <SignIn configured={isConfigured} />;
   } else if (route.name === 'report') {
     body = <Report epicKey={route.key} />;
+  } else if (route.name === 'tech') {
+    body = <TechView epicKey={route.key} />;
   } else {
     body = <Portfolio />;
   }
@@ -204,6 +207,17 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-band{display:inline-block;font-size:11px;font-weight:700;color:var(--navy);background:var(--blue-tint);border-radius:6px;padding:2px 8px;white-space:nowrap;}
 .cdp-src{font-size:9px;font-weight:700;letter-spacing:.03em;color:var(--grad-violet);background:rgba(107,27,150,.1);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;}
 .cdp-jobdot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-left:7px;vertical-align:middle;box-shadow:0 0 0 3px rgba(0,0,0,.03);}
+/* ---- technical view ---- */
+.cdp-techgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:16px;margin-top:16px;}
+.cdp-techcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;}
+.cdp-techcard h3{font-family:'Sora',sans-serif;font-weight:700;font-size:15px;margin:0 0 3px;display:flex;align-items:center;gap:2px;}
+.cdp-techcard .sub{font-size:12px;color:var(--slate);margin:2px 0 13px;}
+.cdp-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;}
+.cdp-metric{background:var(--wash);border-radius:10px;padding:9px 10px;min-width:0;}
+.cdp-metric .m-n{font-family:'Sora',sans-serif;font-weight:700;font-size:15px;line-height:1.15;overflow:hidden;text-overflow:ellipsis;}
+.cdp-metric .m-l{font-size:10px;color:var(--slate);margin-top:4px;text-transform:uppercase;letter-spacing:.03em;}
+.cdp-cfg{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px;margin:0;}
+.cdp-cfg dt{color:var(--slate);white-space:nowrap;} .cdp-cfg dd{margin:0;font-weight:600;text-align:right;}
 .cdp-panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px;}
 .cdp-panel h4{font-family:'Sora';font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
 .cdp-panel + .cdp-panel{margin-top:16px;}

@@ -100,6 +100,8 @@ export default async function handler(req, res) {
     detail.phase = { index: phaseIndex, steps: PHASES };
     detail.sowPricingStatus = sowStatus;
     detail.scrapyStatus = scrapyStatus;
+    // The technical config is internal-only — strip it for customers.
+    if (!scope.internal) for (const f of feeds) delete f.config;
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     res.status(200).json(detail);
