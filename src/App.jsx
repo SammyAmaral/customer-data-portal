@@ -126,6 +126,23 @@ a{color:var(--blue);text-decoration:none;} a:hover{text-decoration:underline;}
 .cdp-search input{border:0;outline:0;font-size:14px;font-family:'Inter';width:100%;color:var(--ink);background:transparent;}
 .cdp-chip{font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 13px;cursor:pointer;color:var(--slate);}
 .cdp-chip.active{background:var(--navy-deep);color:#fff;border-color:var(--navy-deep);}
+.cdp-controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:6px 0 14px;}
+.cdp-select{font-size:12.5px;font-weight:600;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 30px 7px 12px;cursor:pointer;font-family:'Inter';outline:none;appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235C6B84' stroke-width='3'><path d='M6 9l6 6 6-6'/></svg>");background-repeat:no-repeat;background-position:right 10px center;}
+.cdp-select:focus{border-color:var(--blue);}
+.cdp-viewtoggle{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fff;}
+.cdp-viewtoggle button{border:0;background:none;padding:7px 11px;font-size:12.5px;font-weight:600;color:var(--slate);cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+.cdp-viewtoggle button.active{background:var(--navy-deep);color:#fff;}
+.cdp-ptable{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;}
+.cdp-ptable thead th{text-align:left;font-family:'Sora';font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--slate);padding:11px 14px;border-bottom:1px solid var(--line);background:var(--wash);}
+.cdp-ptable thead th.num{text-align:center;}
+.cdp-ptable tbody td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:middle;}
+.cdp-ptable tbody tr:last-child td{border-bottom:0;}
+.cdp-ptable tbody tr{cursor:pointer;}
+.cdp-ptable tbody tr:hover{background:var(--blue-tint);}
+.cdp-ptable .cust{font-family:'Sora';font-weight:700;font-size:13.5px;color:var(--ink);}
+.cdp-ptable .eng{font-size:12px;color:var(--slate);}
+.cdp-minibar{height:7px;border-radius:4px;background:var(--wash);overflow:hidden;display:flex;min-width:96px;}
+.cdp-minibar i{display:block;height:100%;}
 
 /* ---- engagement cards ---- */
 .cdp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;}
