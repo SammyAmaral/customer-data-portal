@@ -181,7 +181,7 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-actions .cdp-btn-ghost{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2);color:#fff;}
 .cdp-actions .cdp-btn-ghost:hover{background:rgba(255,255,255,.18);color:#fff;}
 
-.cdp-metacards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
+.cdp-metacards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:16px;}
 .cdp-metacard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px;}
 .cdp-metacard h4{font-family:'Sora';font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin:0 0 13px;}
 .cdp-dl{display:grid;grid-template-columns:auto 1fr;gap:9px 16px;font-size:13.5px;}

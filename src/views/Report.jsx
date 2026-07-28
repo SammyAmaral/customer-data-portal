@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
-import { fmtDate, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
+import { fmtDate, fmtMoney, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
 export default function Report({ epicKey }) {
@@ -39,6 +39,13 @@ export default function Report({ epicKey }) {
   const phase = data.phase || { index: 0, steps: [] };
   const notStarted = isNotStarted(data.status);
   const current = notStarted ? -1 : phase.index; // -1 → no step active yet
+
+  const feeds = data.feeds || [];
+  const pricedFeeds = feeds.filter((f) => f.subscriptionPrice != null);
+  const pricedSum = pricedFeeds.reduce((s, f) => s + f.subscriptionPrice, 0);
+  const missingPrice = feeds.length - pricedFeeds.length;
+  const c = data.commercial || {};
+  const hasCommercial = c.setupFee != null || c.mrrValue != null || c.totalContractValue != null || pricedFeeds.length > 0;
 
   return (
     <div className="cdp-wrap">
@@ -103,6 +110,25 @@ export default function Report({ epicKey }) {
             </div>
           )}
         </div>
+
+        {hasCommercial && (
+          <div className="cdp-metacard">
+            <h4>Commercial</h4>
+            <dl className="cdp-dl">
+              <dt>Setup fee</dt><dd>{fmtMoney(c.setupFee)}</dd>
+              <dt>Monthly subscription</dt><dd>{fmtMoney(c.mrrValue)}</dd>
+              <dt>Contract length</dt><dd>{c.mrrPeriods != null ? `${c.mrrPeriods} months` : '—'}</dd>
+              <dt>Total contract value</dt><dd>{fmtMoney(c.totalContractValue)}</dd>
+              {data.internal && data.internal.margin != null && (<><dt>Project margin</dt><dd>{data.internal.margin}%</dd></>)}
+            </dl>
+            {feeds.length > 0 && (
+              <div style={{ marginTop: 12, fontSize: 12, color: 'var(--slate)' }}>
+                Feeds priced: <b style={{ color: 'var(--ink)' }}>{fmtMoney(pricedSum)}</b>
+                {missingPrice > 0 ? ` · ${missingPrice} feed${missingPrice > 1 ? 's' : ''} missing a price` : ''}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ---- phase stepper ---- */}
@@ -135,7 +161,7 @@ export default function Report({ epicKey }) {
               <table className="cdp-table">
                 <thead>
                   <tr>
-                    <th>Feed</th><th>Status</th><th>Volume band</th>
+                    <th>Feed</th><th>Status</th><th>Volume band</th><th>Subscription</th>
                     <th>Start date</th><th>1st sample sent</th><th>Sample approved</th><th>Due date</th>
                     <th>Days open</th>
                   </tr>
@@ -149,6 +175,7 @@ export default function Report({ epicKey }) {
                         <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
                           <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
                         <td className="center">{f.volumeBand ? <span className="cdp-band">{f.volumeBand}</span> : '—'}</td>
+                        <td className="center">{f.subscriptionPrice != null ? fmtMoney(f.subscriptionPrice) : '—'}</td>
                         <td className="center">{f.startDate ? fmtDate(f.startDate) : '—'}</td>
                         <td className="center">{f.firstSampleSent ? fmtDate(f.firstSampleSent) : '—'}</td>
                         <td className="center">{f.sampleApproved ? fmtDate(f.sampleApproved) : '—'}</td>

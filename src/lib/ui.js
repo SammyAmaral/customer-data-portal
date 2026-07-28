@@ -1,5 +1,12 @@
 /* Small presentational helpers shared by the views (pure, no state). */
 
+// Money-ish number → thousands-separated string. No currency symbol (the Jira
+// fields store a bare number); pass one in if you want a prefix.
+export function fmtMoney(n, symbol = '') {
+  if (n == null || n === '' || !Number.isFinite(Number(n))) return '—';
+  return symbol + Number(n).toLocaleString('en-US');
+}
+
 export function fmtDate(iso) {
   if (!iso) return '—';
   const d = new Date(iso);

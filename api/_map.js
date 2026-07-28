@@ -35,6 +35,11 @@ export const CF = {
   projectStatus: 'customfield_13671',
   solutionArchitect: 'customfield_13312',
   volumeBand: 'customfield_13586',
+  subscriptionPrice: 'customfield_13599', // per-feed price (sums to the Epic MRR Value)
+  setupFee: 'customfield_13710',
+  mrrValue: 'customfield_13667',          // total monthly subscription
+  mrrPeriods: 'customfield_13668',        // contract length (months)
+  margin: 'customfield_13957',            // Project Margin % — INTERNAL ONLY
   slack: 'customfield_13713',
   sfOpportunity: 'customfield_13575',
   sows: 'customfield_13319',
@@ -55,11 +60,12 @@ export const EPIC_DETAIL_FIELDS = [
   CF.projContactName, CF.projContactEmail, CF.techContactName, CF.techContactEmail,
   CF.scope, CF.outOfScope, CF.projectStatus, CF.solutionArchitect, CF.slack,
   CF.sfOpportunity, CF.sows, CF.satForm, CF.satLink,
+  CF.setupFee, CF.mrrValue, CF.mrrPeriods, CF.margin,
 ];
 
 export const CHILD_FIELDS = ['summary', 'status', 'issuetype', 'created', 'resolutiondate'];
 // Extra per-feed fields for the Data Feed Status table (start/due/volume band).
-export const FEED_FIELDS = [...CHILD_FIELDS, CF.startDate, 'duedate', CF.volumeBand];
+export const FEED_FIELDS = [...CHILD_FIELDS, CF.startDate, 'duedate', CF.volumeBand, CF.subscriptionPrice];
 
 /* ---- ADF / value helpers ------------------------------------------------ */
 export function adfText(n) {
@@ -99,6 +105,13 @@ export function selectValue(field) {
   if (Array.isArray(field)) return field.length ? (field[0].value || null) : null;
   if (typeof field === 'object') return field.value || null;
   return String(field);
+}
+
+// A numeric field → Number or null (Jira may return string or number).
+export function num(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 // Pull the first URL out of a field that may be a plain string or ADF with a link mark.
@@ -276,8 +289,21 @@ export function mapEpicDetail(issue, { internal = false } = {}) {
     projectStatus: adfLines(f[CF.projectStatus]),
   };
 
+  // Commercial (customer-safe — reflects the signed SOW). Margin is added
+  // separately, internal-only, below.
+  const setupFee = num(f[CF.setupFee]);
+  const mrrValue = num(f[CF.mrrValue]);
+  const mrrPeriods = num(f[CF.mrrPeriods]);
+  detail.commercial = {
+    setupFee, mrrValue, mrrPeriods,
+    totalContractValue: (setupFee != null || mrrValue != null)
+      ? (setupFee || 0) + (mrrValue || 0) * (mrrPeriods || 0)
+      : null,
+  };
+
   if (internal) {
     detail.internal = {
+      margin: num(f[CF.margin]),
       solutionArchitect: personName(f[CF.solutionArchitect]),
       slack: cleanText(adfText(f[CF.slack])) || null,
       links: [
@@ -308,6 +334,7 @@ export function mapFeed(issue, histories, asOf) {
     sampleApproved,
     dueDate: f.duedate || null,
     volumeBand: selectValue(f[CF.volumeBand]),
+    subscriptionPrice: num(f[CF.subscriptionPrice]),
     daysOpen: created ? businessDaysBetween(created, end) : null,
   };
 }
