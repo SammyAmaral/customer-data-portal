@@ -37,6 +37,12 @@ export function cx(...parts) {
   return parts.filter(Boolean).join(' ');
 }
 
+// An engagement whose Epic status is still "To Do" hasn't started yet — show
+// "Not started" instead of the derived phase ("Project Kickoff").
+export function isNotStarted(status) {
+  return /^(to ?do|backlog|open)$/i.test(String(status || '').trim());
+}
+
 // A percentage 0–100 of feeds delivered, for the progress bars.
 export function donePct(counts) {
   if (!counts || !counts.total) return 0;

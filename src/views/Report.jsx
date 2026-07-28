@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
-import { fmtDate, ragToken, feedToken, cx } from '../lib/ui.js';
+import { fmtDate, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
 export default function Report({ epicKey }) {
@@ -37,6 +37,8 @@ export default function Report({ epicKey }) {
 
   const rt = ragToken(data.rag);
   const phase = data.phase || { index: 0, steps: [] };
+  const notStarted = isNotStarted(data.status);
+  const current = notStarted ? -1 : phase.index; // -1 → no step active yet
 
   return (
     <div className="cdp-wrap">
@@ -48,7 +50,7 @@ export default function Report({ epicKey }) {
           <div>
             <div className="cdp-eyebrow" style={{ color: '#9FC0FF' }}>{data.customer}</div>
             <h1>{data.name}</h1>
-            <div className="cust">Data delivery status · {data.key}</div>
+            <div className="cust">Data delivery status · {data.key}{notStarted ? ' · Not started' : ''}</div>
           </div>
           <div className="cdp-biglight">
             <span className="dot" style={{ background: rt.color }} />
@@ -106,14 +108,26 @@ export default function Report({ epicKey }) {
       {/* ---- phase stepper ---- */}
       <div className="cdp-stepper">
         {phase.steps.map((label, i) => (
-          <div key={label} className={cx('cdp-step', i < phase.index && 'done', i === phase.index && 'current')}>
-            <span className="num">{i < phase.index ? '✓' : i + 1}</span>
+          <div key={label} className={cx('cdp-step', i < current && 'done', i === current && 'current')}>
+            <span className="num">{i < current ? '✓' : i + 1}</span>
             <span>{label}</span>
           </div>
         ))}
       </div>
 
-      {/* ---- feed table (full width) ---- */}
+      {/* ---- narrative (Overview, Scope, Out of Scope, Project Updates) ---- */}
+      <div className="cdp-report-narrative">
+        <div>
+          <NarrativePanel title="Overview" text={data.overview} />
+          <ListPanel title="Scope & Assumptions" items={data.scope} />
+        </div>
+        <div>
+          <ListPanel title="Out of Scope" items={data.outOfScope} />
+          <ListPanel title="Project Updates" items={data.projectStatus} variant="updates" />
+        </div>
+      </div>
+
+      {/* ---- feed table (full width, after the narrative) ---- */}
       <div className="cdp-panel cdp-feedpanel">
           <h4>Data Feed Status</h4>
           {data.feeds && data.feeds.length > 0 ? (
@@ -147,18 +161,6 @@ export default function Report({ epicKey }) {
               </table>
             </div>
           ) : <div className="cdp-empty">No data feeds recorded on this engagement yet.</div>}
-        </div>
-
-      {/* ---- narrative (2 columns, below the full-width feed table) ---- */}
-      <div className="cdp-report-narrative">
-        <div>
-          <NarrativePanel title="Overview" text={data.overview} />
-          <ListPanel title="Scope & Assumptions" items={data.scope} />
-        </div>
-        <div>
-          <ListPanel title="Out of Scope" items={data.outOfScope} />
-          <ListPanel title="Project Updates" items={data.projectStatus} variant="updates" />
-        </div>
       </div>
     </div>
   );

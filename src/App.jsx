@@ -158,6 +158,7 @@ a{color:var(--blue);text-decoration:none;} a:hover{text-decoration:underline;}
 .cdp-progress{height:8px;border-radius:5px;background:var(--wash);overflow:hidden;display:flex;}
 .cdp-progress i{display:block;height:100%;}
 .cdp-phasechip{font-size:11px;font-weight:600;color:var(--navy);background:var(--blue-tint);border-radius:6px;padding:3px 9px;display:inline-block;}
+.cdp-phasechip.muted{color:var(--slate);background:var(--wash);}
 
 /* ---- report ---- */
 .cdp-backlink{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--slate);background:none;border:0;cursor:pointer;padding:16px 0 0;}
@@ -193,7 +194,7 @@ a{color:var(--blue);text-decoration:none;} a:hover{text-decoration:underline;}
 /* ---- report body ---- */
 .cdp-report-body{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:4px;}
 .cdp-report-narrative{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
-.cdp-feedpanel{margin-top:4px;}
+.cdp-feedpanel{margin-top:16px;}
 .cdp-band{display:inline-block;font-size:11px;font-weight:700;color:var(--navy);background:var(--blue-tint);border-radius:6px;padding:2px 8px;white-space:nowrap;}
 .cdp-panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px;}
 .cdp-panel h4{font-family:'Sora';font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin:0 0 12px;display:flex;align-items:center;gap:8px;}

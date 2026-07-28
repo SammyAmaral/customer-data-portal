@@ -2,7 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Layers, LayoutGrid, Table } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
-import { fmtDate, ragToken, cx, donePct } from '../lib/ui.js';
+import { fmtDate, ragToken, cx, donePct, isNotStarted } from '../lib/ui.js';
+
+// Display label for an engagement's stage: "Not started" while the Epic is
+// still To Do, otherwise the derived phase.
+function stageLabel(e) {
+  if (isNotStarted(e.status)) return 'Not started';
+  return e.phase != null ? PHASES[e.phase] : null;
+}
 
 const PHASES = ['Project Kickoff', 'Development', 'Q&A', 'Sample & Approval', 'In Production'];
 const RAG_FILTERS = [
@@ -193,7 +200,7 @@ function EngagementCard({ e }) {
         <div><h3>{e.customer}</h3><div className="sub">{e.summary}</div></div>
         <span className="cdp-rag"><span className="dot" style={{ background: rt.color }} />{rt.label}</span>
       </div>
-      {e.phase != null && <div><span className="cdp-phasechip">{PHASES[e.phase]}</span></div>}
+      {stageLabel(e) && <div><span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span></div>}
       <div className="cdp-meta-row"><span>PM <b>{e.pm || '—'}</b></span><span>Finish <b>{fmtDate(e.plannedFinish)}</b></span></div>
       <div>
         <ProgressBar counts={c} />
@@ -226,7 +233,7 @@ function PortfolioTable({ rows, showPm }) {
             return (
               <tr key={e.key} onClick={() => navigate(`#/report/${e.key}`)}>
                 <td><div className="cust">{e.customer}</div><div className="eng">{e.summary}</div></td>
-                <td>{e.phase != null ? <span className="cdp-phasechip">{PHASES[e.phase]}</span> : '—'}</td>
+                <td>{stageLabel(e) ? <span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span> : '—'}</td>
                 <td><span className="cdp-rag"><span className="dot" style={{ background: rt.color }} />{rt.label}</span></td>
                 {showPm && <td style={{ fontSize: 12.5 }}>{e.pm || '—'}</td>}
                 <td style={{ fontSize: 12.5, whiteSpace: 'nowrap' }}>{fmtDate(e.plannedFinish)}</td>
