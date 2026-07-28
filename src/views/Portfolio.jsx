@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Layers, LayoutGrid, Table } from 'lucide-react';
+import { Search, Layers, LayoutGrid, Table, X } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { fmtDate, ragToken, cx, donePct, isNotStarted } from '../lib/ui.js';
@@ -26,6 +26,11 @@ const SORTS = [
   { key: 'health', label: 'Health (worst first)' },
 ];
 
+const KPI_LABELS = {
+  notStarted: 'Not started', inProgress: 'In progress', awaiting: 'Awaiting feedback',
+  inProduction: 'In production', overdue: 'Overdue', atRisk: 'At risk',
+};
+
 const monthKey = (e) => (e.plannedFinish ? e.plannedFinish.slice(0, 7) : 'none');
 const monthLabel = (k) => {
   if (k === 'none') return 'No finish date';
@@ -44,6 +49,7 @@ export default function Portfolio() {
   const [month, setMonth] = useState('all');
   const [sort, setSort] = useState('updated');
   const [view, setView] = useState('cards');
+  const [kpi, setKpi] = useState(null); // active KPI filter key, or null
 
   useEffect(() => {
     let alive = true;
@@ -58,7 +64,39 @@ export default function Portfolio() {
   }, []);
 
   const engagements = data ? data.engagements : [];
-  const kpis = useMemo(() => summarise(engagements), [engagements]);
+
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const preds = useMemo(() => ({
+    notStarted: (e) => isNotStarted(e.status),
+    inProgress: (e) => !isNotStarted(e.status) && e.phase >= 1 && e.phase < 4,
+    awaiting: (e) => (e.feedCounts ? e.feedCounts.review : 0) > 0,
+    inProduction: (e) => e.phase === 4,
+    overdue: (e) => e.plannedFinish && e.plannedFinish < today && e.phase !== 4,
+    atRisk: (e) => e.rag === 'amber' || e.rag === 'red',
+  }), [today]);
+
+  const metrics = useMemo(() => {
+    const m = { total: engagements.length, notStarted: 0, inProgress: 0, awaiting: 0, inProduction: 0, overdue: 0, atRisk: 0, feedsDone: 0, feedsTotal: 0 };
+    for (const e of engagements) {
+      if (preds.notStarted(e)) m.notStarted++;
+      if (preds.inProgress(e)) m.inProgress++;
+      if (preds.awaiting(e)) m.awaiting++;
+      if (preds.inProduction(e)) m.inProduction++;
+      if (preds.overdue(e)) m.overdue++;
+      if (preds.atRisk(e)) m.atRisk++;
+      const fc = e.feedCounts || {};
+      m.feedsDone += fc.done || 0;
+      m.feedsTotal += fc.total || 0;
+    }
+    m.completion = m.feedsTotal ? Math.round((m.feedsDone / m.feedsTotal) * 100) : 0;
+    return m;
+  }, [engagements, preds]);
+
+  const noFilters = kpi === null && rag === 'all' && pm === 'all' && phase === 'all' && month === 'all' && !q.trim();
+  const onKpi = (key) => {
+    if (key === 'all') { setKpi(null); setRag('all'); setPm('all'); setPhase('all'); setMonth('all'); setQ(''); return; }
+    setKpi((prev) => (prev === key ? null : key));
+  };
 
   const pmOptions = useMemo(
     () => [...new Set(engagements.map((e) => e.pm || 'Unassigned'))].sort((a, b) => a.localeCompare(b)),
@@ -72,6 +110,7 @@ export default function Portfolio() {
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const filtered = engagements.filter((e) => {
+      if (kpi && preds[kpi] && !preds[kpi](e)) return false;
       if (rag !== 'all' && (e.rag || 'grey') !== rag) return false;
       if (pm !== 'all' && (e.pm || 'Unassigned') !== pm) return false;
       if (phase !== 'all' && String(e.phase) !== phase) return false;
@@ -87,7 +126,7 @@ export default function Portfolio() {
       health: (a, b) => ragRank(a.rag) - ragRank(b.rag),
     }[sort];
     return [...filtered].sort(cmp);
-  }, [engagements, q, rag, pm, phase, month, sort]);
+  }, [engagements, q, rag, pm, phase, month, sort, kpi, preds]);
 
   if (error) {
     return <div className="cdp-wrap"><div className="cdp-emptystate" style={{ marginTop: 40 }}>
@@ -107,12 +146,14 @@ export default function Portfolio() {
             ? 'Live status across active Data on Demand engagements — click any customer to open their report.'
             : 'The live status of your Zyte data delivery engagement(s).'}</p>
           <div className="cdp-kpis">
-            <Kpi n={kpis.total} l="Engagements" />
-            <Kpi n={kpis.inProgress} l="In progress" />
-            <Kpi n={kpis.delivered} l="In production" />
-            <Kpi n={kpis.dueThisMonth} l="Due this month" alert={kpis.dueThisMonth > 0} />
-            <Kpi n={kpis.blockedFeeds} l="Blocked feeds" alert={kpis.blockedFeeds > 0} />
-            <Kpi n={kpis.atRisk} l="At risk" alert={kpis.atRisk > 0} />
+            <Kpi n={metrics.total} l="Engagements" active={noFilters} onClick={() => onKpi('all')} />
+            <Kpi n={metrics.notStarted} l="Not started" active={kpi === 'notStarted'} onClick={() => onKpi('notStarted')} />
+            <Kpi n={metrics.inProgress} l="In progress" active={kpi === 'inProgress'} onClick={() => onKpi('inProgress')} />
+            <Kpi n={metrics.awaiting} l="Awaiting feedback" active={kpi === 'awaiting'} onClick={() => onKpi('awaiting')} />
+            <Kpi n={metrics.inProduction} l="In production" active={kpi === 'inProduction'} onClick={() => onKpi('inProduction')} />
+            <Kpi n={metrics.overdue} l="Overdue" alert={metrics.overdue > 0} active={kpi === 'overdue'} onClick={() => onKpi('overdue')} />
+            <Kpi n={metrics.atRisk} l="At risk" alert={metrics.atRisk > 0} active={kpi === 'atRisk'} onClick={() => onKpi('atRisk')} />
+            <KpiPct pct={metrics.completion} />
           </div>
         </div>
       </section>
@@ -134,7 +175,10 @@ export default function Portfolio() {
               {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
           </label>
-          <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--slate)' }}>{shown.length} of {engagements.length}</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {kpi && <button className="cdp-kpiclear" onClick={() => setKpi(null)}>{KPI_LABELS[kpi]} <X size={13} /></button>}
+            <span style={{ fontSize: 12.5, color: 'var(--slate)' }}>{shown.length} of {engagements.length}</span>
+          </div>
         </div>
 
         {/* row 2: filters */}
@@ -174,8 +218,22 @@ export default function Portfolio() {
   );
 }
 
-function Kpi({ n, l, alert }) {
-  return <div className={cx('cdp-kpi', alert && 'alert')}><div className="n">{n}</div><div className="l">{l}</div></div>;
+function Kpi({ n, l, alert, active, onClick }) {
+  return (
+    <button type="button" className={cx('cdp-kpi', alert && 'alert', active && 'active')} onClick={onClick} title={`Filter: ${l}`}>
+      <div className="n">{n}</div><div className="l">{l}</div>
+    </button>
+  );
+}
+
+function KpiPct({ pct }) {
+  return (
+    <div className="cdp-kpi">
+      <div className="n">{pct}%</div>
+      <div className="l">Feed completion</div>
+      <div className="cdp-kpibar"><i style={{ width: `${pct}%` }} /></div>
+    </div>
+  );
 }
 
 function ProgressBar({ counts }) {
@@ -250,15 +308,3 @@ function PortfolioTable({ rows, showPm }) {
   );
 }
 
-function summarise(engagements) {
-  const now = new Date();
-  const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  let inProgress = 0, delivered = 0, blockedFeeds = 0, atRisk = 0, dueThisMonth = 0;
-  for (const e of engagements) {
-    if (e.phase === 4) delivered++; else if (e.phase >= 1) inProgress++;
-    blockedFeeds += (e.feedCounts && e.feedCounts.blocked) || 0;
-    if (e.rag === 'amber' || e.rag === 'red') atRisk++;
-    if (e.phase !== 4 && e.plannedFinish && e.plannedFinish.slice(0, 7) === ym) dueThisMonth++;
-  }
-  return { total: engagements.length, inProgress, delivered, blockedFeeds, atRisk, dueThisMonth };
-}
