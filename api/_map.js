@@ -34,6 +34,7 @@ export const CF = {
   outOfScope: 'customfield_13591',
   projectStatus: 'customfield_13671',
   solutionArchitect: 'customfield_13312',
+  volumeBand: 'customfield_13586',
   slack: 'customfield_13713',
   sfOpportunity: 'customfield_13575',
   sows: 'customfield_13319',
@@ -57,6 +58,8 @@ export const EPIC_DETAIL_FIELDS = [
 ];
 
 export const CHILD_FIELDS = ['summary', 'status', 'issuetype', 'created', 'resolutiondate'];
+// Extra per-feed fields for the Data Feed Status table (start/due/volume band).
+export const FEED_FIELDS = [...CHILD_FIELDS, CF.startDate, 'duedate', CF.volumeBand];
 
 /* ---- ADF / value helpers ------------------------------------------------ */
 export function adfText(n) {
@@ -88,6 +91,14 @@ export function adfLines(field) {
 
 export function personName(field) {
   return field && field.displayName ? field.displayName : null;
+}
+
+// A select/multi-select field's readable value (raw, not RAG-normalised).
+export function selectValue(field) {
+  if (!field) return null;
+  if (Array.isArray(field)) return field.length ? (field[0].value || null) : null;
+  if (typeof field === 'object') return field.value || null;
+  return String(field);
 }
 
 // Pull the first URL out of a field that may be a plain string or ADF with a link mark.
@@ -292,8 +303,11 @@ export function mapFeed(issue, histories, asOf) {
     name: stripPrefix(f.summary) || issue.key,
     status,
     bucket: feedBucket(status),
+    startDate: f[CF.startDate] || null,
     firstSampleSent,
     sampleApproved,
+    dueDate: f.duedate || null,
+    volumeBand: selectValue(f[CF.volumeBand]),
     daysOpen: created ? businessDaysBetween(created, end) : null,
   };
 }

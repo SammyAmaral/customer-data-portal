@@ -12,7 +12,7 @@
    ========================================================================= */
 import { getUserScope, requireJira, fetchIssue, fetchIssues } from './_access.js';
 import {
-  EPIC_DETAIL_FIELDS, CHILD_FIELDS, mapEpicDetail, mapFeed, derivePhase, PHASES,
+  EPIC_DETAIL_FIELDS, FEED_FIELDS, mapEpicDetail, mapFeed, derivePhase, PHASES,
 } from './_map.js';
 
 const MAX_CHANGELOG_FEEDS = 80; // safety cap on per-feed changelog fetches
@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     // Children: crawling-component feeds + tasks (for the phase stepper).
     const children = await fetchIssues({
       jql: `parent = ${key} AND issuetype in ("Crawling-Component","Task","Handover") ORDER BY created ASC`,
-      fields: [...CHILD_FIELDS, 'parent'],
+      fields: [...FEED_FIELDS, 'parent'],
     });
     const feedsRaw = children.filter((c) => c.fields && c.fields.issuetype && c.fields.issuetype.name === 'Crawling-Component');
     const tasks = children.filter((c) => c.fields && c.fields.issuetype && c.fields.issuetype.name === 'Task');

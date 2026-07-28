@@ -113,15 +113,18 @@ export default function Report({ epicKey }) {
         ))}
       </div>
 
-      {/* ---- body ---- */}
-      <div className="cdp-report-body">
-        <div className="cdp-panel">
+      {/* ---- feed table (full width) ---- */}
+      <div className="cdp-panel cdp-feedpanel">
           <h4>Data Feed Status</h4>
           {data.feeds && data.feeds.length > 0 ? (
             <div style={{ overflowX: 'auto' }}>
               <table className="cdp-table">
                 <thead>
-                  <tr><th>Feed</th><th>Status</th><th>1st Sample Sent</th><th>Sample Approved</th><th>Days Open</th></tr>
+                  <tr>
+                    <th>Feed</th><th>Status</th><th>Volume band</th>
+                    <th>Start date</th><th>1st sample sent</th><th>Sample approved</th><th>Due date</th>
+                    <th>Days open</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {data.feeds.map((f) => {
@@ -131,8 +134,11 @@ export default function Report({ epicKey }) {
                         <td className="cdp-feedname">{f.name}</td>
                         <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
                           <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
+                        <td className="center">{f.volumeBand ? <span className="cdp-band">{f.volumeBand}</span> : '—'}</td>
+                        <td className="center">{f.startDate ? fmtDate(f.startDate) : '—'}</td>
                         <td className="center">{f.firstSampleSent ? fmtDate(f.firstSampleSent) : '—'}</td>
                         <td className="center">{f.sampleApproved ? fmtDate(f.sampleApproved) : '—'}</td>
+                        <td className="center">{f.dueDate ? fmtDate(f.dueDate) : '—'}</td>
                         <td className="center">{f.daysOpen != null ? f.daysOpen : '—'}</td>
                       </tr>
                     );
@@ -143,9 +149,13 @@ export default function Report({ epicKey }) {
           ) : <div className="cdp-empty">No data feeds recorded on this engagement yet.</div>}
         </div>
 
+      {/* ---- narrative (2 columns, below the full-width feed table) ---- */}
+      <div className="cdp-report-narrative">
         <div>
           <NarrativePanel title="Overview" text={data.overview} />
           <ListPanel title="Scope & Assumptions" items={data.scope} />
+        </div>
+        <div>
           <ListPanel title="Out of Scope" items={data.outOfScope} />
           <ListPanel title="Project Updates" items={data.projectStatus} variant="updates" />
         </div>
