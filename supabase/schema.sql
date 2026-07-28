@@ -36,6 +36,21 @@ alter table report_access enable row level security;
 -- (No policies created on purpose. Manage rows via the Supabase dashboard or
 --  the service role.)
 
+-- =========================================================================
+-- sow_pricing — cache of per-feed prices parsed from each engagement's SOW
+-- PDF (see api/sow.js). One row per Epic; refreshed at most once a day.
+-- Read/written only by the service role (server-side); RLS locked down.
+-- =========================================================================
+create table if not exists sow_pricing (
+  epic_key    text primary key,
+  ok          boolean not null default false,
+  currency    text,
+  by_domain   jsonb not null default '{}'::jsonb,  -- { "bigy.com": {subscriptionFee, setupFee, recordLimit}, ... }
+  fetched_at  timestamptz not null default now()
+);
+alter table sow_pricing enable row level security;
+-- (No policies — service-role only, same as report_access.)
+
 -- -------------------------------------------------------------------------
 -- Example seed (uncomment + edit). Keep emails lower-case.
 -- -------------------------------------------------------------------------

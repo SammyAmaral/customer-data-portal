@@ -175,7 +175,9 @@ export default function Report({ epicKey }) {
                         <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
                           <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
                         <td className="center">{f.volumeBand ? <span className="cdp-band">{f.volumeBand}</span> : '—'}</td>
-                        <td className="center">{f.subscriptionPrice != null ? fmtMoney(f.subscriptionPrice) : '—'}</td>
+                        <td className="center">{f.subscriptionPrice != null
+                          ? <>{fmtMoney(f.subscriptionPrice)}{f.priceSource === 'sow' && <span className="cdp-src" title="Filled from the SOW">SOW</span>}</>
+                          : '—'}</td>
                         <td className="center">{f.startDate ? fmtDate(f.startDate) : '—'}</td>
                         <td className="center">{f.firstSampleSent ? fmtDate(f.firstSampleSent) : '—'}</td>
                         <td className="center">{f.sampleApproved ? fmtDate(f.sampleApproved) : '—'}</td>

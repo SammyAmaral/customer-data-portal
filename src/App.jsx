@@ -202,6 +202,7 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-report-narrative{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px;}
 .cdp-feedpanel{margin-top:16px;}
 .cdp-band{display:inline-block;font-size:11px;font-weight:700;color:var(--navy);background:var(--blue-tint);border-radius:6px;padding:2px 8px;white-space:nowrap;}
+.cdp-src{font-size:9px;font-weight:700;letter-spacing:.03em;color:var(--grad-violet);background:rgba(107,27,150,.1);border-radius:4px;padding:1px 4px;margin-left:5px;vertical-align:middle;}
 .cdp-panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px;}
 .cdp-panel h4{font-family:'Sora';font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
 .cdp-panel + .cdp-panel{margin-top:16px;}

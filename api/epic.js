@@ -12,8 +12,9 @@
    ========================================================================= */
 import { getUserScope, requireJira, fetchIssue, fetchIssues } from './_access.js';
 import {
-  EPIC_DETAIL_FIELDS, FEED_FIELDS, mapEpicDetail, mapFeed, derivePhase, PHASES,
+  EPIC_DETAIL_FIELDS, FEED_FIELDS, CF, firstLink, mapEpicDetail, mapFeed, derivePhase, PHASES,
 } from './_map.js';
+import { getSowPricing, domainKey } from './sow.js';
 
 const MAX_CHANGELOG_FEEDS = 80; // safety cap on per-feed changelog fetches
 
@@ -59,6 +60,26 @@ export default async function handler(req, res) {
     // Any feeds beyond the cap still appear, just without derived sample dates.
     for (const feed of feedsRaw.slice(MAX_CHANGELOG_FEEDS)) feeds.push(mapFeed(feed, [], asOf));
 
+    // Gap-fill missing per-feed prices from the SOW (best-effort; never throws).
+    let sowStatus = null;
+    if (feeds.some((f) => f.subscriptionPrice == null)) {
+      const sowUrl = firstLink(epic.fields[CF.sows]) || firstLink(epic.fields.description);
+      try {
+        const sow = await getSowPricing(key, sowUrl);
+        sowStatus = sow.status;
+        if (sow.ok) {
+          for (const f of feeds) {
+            if (f.subscriptionPrice != null) continue;
+            const hit = sow.byDomain[domainKey(f.name)];
+            if (hit && hit.subscriptionFee != null) {
+              f.subscriptionPrice = hit.subscriptionFee;
+              f.priceSource = 'sow';
+            }
+          }
+        }
+      } catch { sowStatus = 'error'; }
+    }
+
     const kickoffDone = tasks.some((t) =>
       /kickoff|solution design/i.test((t.fields.summary) || '') &&
       /done|complete|closed/i.test(t.fields.status ? t.fields.status.name : ''));
@@ -69,6 +90,7 @@ export default async function handler(req, res) {
     detail.feeds = feeds;
     detail.feedCount = feeds.length;
     detail.phase = { index: phaseIndex, steps: PHASES };
+    detail.sowPricingStatus = sowStatus;
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     res.status(200).json(detail);
