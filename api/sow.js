@@ -53,7 +53,7 @@ function parseDistribution(url) {
 // newlines). Returns null on any failure — caller degrades gracefully.
 async function resolveSowPdf(url) {
   const d = parseDistribution(url);
-  if (!d) return null;
+  if (!d) { console.warn('[sow] could not parse distribution from', url); return null; }
   const distPath = `/a/${d.doc}/${d.token}`;
   const oid = d.org.startsWith('00D') ? d.org : `00D${d.org}`;
   try {
@@ -64,18 +64,20 @@ async function resolveSowPdf(url) {
     const html = await viewer.text();
     const versionId = (html.match(/068[A-Za-z0-9]{12,15}/) || [])[0];
     const contentId = (html.match(/05T[A-Za-z0-9]{12,15}/) || [])[0];
+    console.log('[sow] viewer', viewer.status, 'bytes', html.length, 'versionId', versionId || 'MISSING', 'contentId', contentId || 'MISSING');
     if (!versionId || !contentId) return null; // fragile step failed → fallback
 
     const dl = `${d.base}/sfc/dist/version/renditionDownload?rendition=ORIGINAL_Pdf`
       + `&versionId=${versionId}&contentId=${contentId}&operationContext=DELIVERY`
       + `&page=0&oid=${oid}&d=${encodeURIComponent(distPath)}`;
     const resp = await fetch(dl);
-    if (!resp.ok) return null;
     const ct = resp.headers.get('content-type') || '';
-    if (!ct.includes('pdf')) return null;
+    console.log('[sow] download', resp.status, ct);
+    if (!resp.ok || !ct.includes('pdf')) return null;
     const buf = Buffer.from(await resp.arrayBuffer());
     return buf.toString('base64');
-  } catch {
+  } catch (e) {
+    console.warn('[sow] resolveSowPdf error', String(e && e.message || e));
     return null;
   }
 }
@@ -133,10 +135,14 @@ async function extractPricing(pdfBase64) {
       output_config: { format: { type: 'json_schema', schema: PRICING_SCHEMA } },
     }),
   });
-  if (!resp.ok) return null;
+  if (!resp.ok) { console.warn('[sow] anthropic', resp.status, (await resp.text()).slice(0, 200)); return null; }
   const data = await resp.json();
   const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-  try { return JSON.parse(text); } catch { return null; }
+  try {
+    const parsed = JSON.parse(text);
+    console.log('[sow] extracted', (parsed.feeds || []).length, 'feed rows, currency', parsed.currency);
+    return parsed;
+  } catch { console.warn('[sow] could not parse Claude output'); return null; }
 }
 
 // Public entry point. Returns { ok, status, currency, byDomain } — byDomain
