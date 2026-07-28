@@ -57,9 +57,13 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Internal: active engagements only — exclude Done (delivered/closed) and
+    // Rejected/Cancelled Epics from the list. Customers still see every Epic
+    // explicitly granted to them (any status), so a completed engagement they
+    // were given a link to still opens.
     const jql = scope.internal
-      ? `project = "${PROJECT}" AND issuetype = Epic AND status != "Rejected / Cancelled" ` +
-        `AND (statusCategory != Done OR resolutiondate >= -60d) ORDER BY updated DESC`
+      ? `project = "${PROJECT}" AND issuetype = Epic AND statusCategory != Done ` +
+        `AND status != "Rejected / Cancelled" ORDER BY updated DESC`
       : `key in (${[...scope.epicKeys].join(',')}) AND issuetype = Epic ORDER BY updated DESC`;
 
     const epics = await fetchIssues({ jql, fields: EPIC_LIST_FIELDS });
