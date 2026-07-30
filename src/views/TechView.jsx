@@ -40,6 +40,24 @@ const SCRAPY_NOTE = {
   error: 'Couldn’t reach Scrapy Cloud — cards show the Jira configuration only.',
 };
 
+// Turn the (internal-only) scrapyDebug into a plain-English diagnosis.
+function scrapyDiagnostic(status, dbg) {
+  if (status === 'ok') return null;
+  if (!dbg) return SCRAPY_NOTE[status] || null;
+  if (dbg.authRejected) {
+    return `The jobs API rejected the key (HTTP ${dbg.httpErrors}). SCRAPYCLOUD_API_KEY needs to be a `
+      + `Scrapy Cloud API key whose user can access this org — then redeploy.`;
+  }
+  if (status === 'no-jobs' && dbg.jobCallsOk > 0) {
+    return `The jobs API accepted the key (${dbg.jobCallsOk}/${dbg.jobCalls} calls OK) but returned no jobs `
+      + `for any feed's spider name — the Spider Name fields don't match a deployed spider.`;
+  }
+  if (status === 'no-jobs' && dbg.httpErrors) {
+    return `The jobs API returned errors (HTTP ${dbg.httpErrors}) on all ${dbg.jobCalls} calls.`;
+  }
+  return SCRAPY_NOTE[status] || null;
+}
+
 function jobStateLabel(f) {
   if (!f.jobState) return 'No crawl job found';
   if (f.jobState === 'running') return 'Crawling now';
@@ -109,8 +127,15 @@ export default function TechView({ epicKey }) {
         </div>
       </section>
 
-      {SCRAPY_NOTE[data.scrapyStatus] && (
-        <div className="cdp-note" style={{ marginBottom: 4 }}>{SCRAPY_NOTE[data.scrapyStatus]}</div>
+      {scrapyDiagnostic(data.scrapyStatus, data.scrapyDebug) && (
+        <div className="cdp-note" style={{ marginBottom: 4 }}>
+          {scrapyDiagnostic(data.scrapyStatus, data.scrapyDebug)}
+          {data.scrapyDebug && (
+            <span style={{ display: 'block', marginTop: 4, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, opacity: 0.75 }}>
+              via {data.scrapyDebug.via} · projects {(data.scrapyDebug.projects || []).join(', ') || '—'} · job calls {data.scrapyDebug.jobCallsOk}/{data.scrapyDebug.jobCalls} OK{data.scrapyDebug.httpErrors ? ` · HTTP ${data.scrapyDebug.httpErrors}` : ''} · {data.scrapyDebug.enriched}/{data.scrapyDebug.spiders} feeds
+            </span>
+          )}
+        </div>
       )}
 
       {feeds.length > 0 ? (

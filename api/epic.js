@@ -85,6 +85,7 @@ export default async function handler(req, res) {
     // The Epic points at its production + development Scrapy Cloud projects;
     // each feed's spider is looked up there (see api/scrapy.js).
     let scrapyStatus = null;
+    let scrapyDebug = null;
     try {
       const sc = await enrichFeeds(key, feeds, {
         prodProject: parseZyteId(epic.fields[CF.scProdProject], 'p'),
@@ -92,6 +93,7 @@ export default async function handler(req, res) {
         org: parseZyteId(epic.fields[CF.zyteDataOrg], 'o'),
       });
       scrapyStatus = sc.status;
+      scrapyDebug = sc.debug || null;
     } catch (e) { scrapyStatus = 'error'; }
 
     const kickoffDone = tasks.some((t) =>
@@ -106,8 +108,9 @@ export default async function handler(req, res) {
     detail.phase = { index: phaseIndex, steps: PHASES };
     detail.sowPricingStatus = sowStatus;
     detail.scrapyStatus = scrapyStatus;
-    // The technical config is internal-only — strip it for customers.
-    if (!scope.internal) for (const f of feeds) delete f.config;
+    // The technical config + crawl diagnostics are internal-only.
+    if (scope.internal) detail.scrapyDebug = scrapyDebug;
+    else for (const f of feeds) delete f.config;
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     res.status(200).json(detail);

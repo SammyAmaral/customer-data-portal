@@ -77,11 +77,18 @@ function rankProjects(projects) {
 }
 
 // Recent jobs for one spider in one project. Returns [] on no jobs, null on error.
-async function fetchSpiderJobs(project, spider) {
+// `probe` accumulates HTTP outcomes so we can surface why nothing came back.
+async function fetchSpiderJobs(project, spider, probe) {
   const url = `${SC_BASE}/api/jobs/list.json?project=${encodeURIComponent(project)}`
     + `&spider=${encodeURIComponent(spider)}&count=${JOBS_PER_SPIDER}`;
+  probe.calls++;
   const resp = await fetch(url, { headers: { Authorization: authHeader(), Accept: 'application/json' } });
-  if (!resp.ok) { console.warn('[scrapy] jobs.list', resp.status, project, spider); return null; }
+  if (!resp.ok) {
+    probe.status[resp.status] = (probe.status[resp.status] || 0) + 1;
+    console.warn('[scrapy] jobs.list', resp.status, project, spider);
+    return null;
+  }
+  probe.ok++;
   let body;
   try { body = await resp.json(); } catch { return null; }
   const jobs = Array.isArray(body && body.jobs) ? body.jobs : [];
@@ -174,13 +181,14 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
 
   let enriched = 0;
   const toCache = [];
+  const probe = { calls: 0, ok: 0, status: {} }; // HTTP outcomes for diagnostics
   await Promise.all(targets.map(async (f) => {
     const k = cacheKey(f);
     if (cache[k]) { apply(f, cache[k]); enriched++; return; }
     try {
       let summary = null;
       for (const p of projects) {          // production first, then development
-        const jobs = await fetchSpiderJobs(p.id, f.spiderResolved);
+        const jobs = await fetchSpiderJobs(p.id, f.spiderResolved, probe);
         if (jobs && jobs.length) { summary = summarize(jobs, p.id, p.env); break; }
       }
       if (summary) {
@@ -194,7 +202,18 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
   if (svc && toCache.length) {
     try { await svc.from('scrapy_jobs').upsert(toCache, { onConflict: 'key' }); } catch { /* best-effort */ }
   }
-  console.log('[scrapy]', epicKey, 'via', via, 'projects', projects.map((p) => `${p.env}:${p.id}`).join(','),
-    'spiders', targets.length, 'enriched', enriched);
-  return { status: enriched ? 'ok' : 'no-jobs', enriched };
+  // Summarise the HTTP outcomes so the UI can say *why* nothing came back:
+  // an auth code (401/403) = the key was rejected; all-OK-but-no-jobs = the
+  // spider names don't match a deployed spider.
+  const httpErrors = Object.entries(probe.status).map(([code, n]) => `${code}×${n}`).join(' ');
+  const authRejected = !!(probe.status[401] || probe.status[403]);
+  const debug = {
+    projects: projects.map((p) => `${p.env}:${p.id}`),
+    via, spiders: targets.length, enriched,
+    jobCalls: probe.calls, jobCallsOk: probe.ok, httpErrors: httpErrors || null, authRejected,
+  };
+  console.log('[scrapy]', epicKey, 'via', via, 'projects', debug.projects.join(','),
+    'spiders', targets.length, 'enriched', enriched, 'jobCalls', probe.calls, 'ok', probe.ok,
+    'httpErrors', httpErrors || 'none');
+  return { status: enriched ? 'ok' : 'no-jobs', enriched, debug };
 }
