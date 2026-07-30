@@ -52,18 +52,21 @@ alter table sow_pricing enable row level security;
 -- (No policies — service-role only, same as report_access.)
 
 -- =========================================================================
--- scrapy_jobs — cache of the latest Scrapy Cloud job per (project:spider),
--- so the report doesn't hit the HubStorage API on every load (see api/scrapy.js).
+-- scrapy_jobs — cache of a feed's resolved Scrapy Cloud telemetry, so the
+-- report doesn't hit the jobs API on every load (see api/scrapy.js).
+-- One row per (epic:feed); `data` holds the computed summary (records, recent
+-- volume, run count, state, errors, source prod/dev, latest job key).
 -- Refreshed hourly. Service-role only.
+--
+-- NOTE: if you created the earlier version of this table (scalar columns keyed
+-- by "{project}:{spider}"), drop it first so the new shape applies:
+--   drop table if exists scrapy_jobs;
 -- =========================================================================
 create table if not exists scrapy_jobs (
-  key           text primary key,          -- "{project}:{spiderName}"
+  key           text primary key,          -- "{epicKey}:{feedKey}"
   epic_key      text,
-  records       bigint,
-  state         text,
-  close_reason  text,
-  errors        integer,
-  finished_at   date,
+  spider        text,
+  data          jsonb,
   fetched_at    timestamptz not null default now()
 );
 alter table scrapy_jobs enable row level security;

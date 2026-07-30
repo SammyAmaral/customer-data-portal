@@ -1,24 +1,33 @@
 /* =========================================================================
-   scrapy.js — live crawl telemetry from Scrapy Cloud (HubStorage API).
+   scrapy.js — live crawl telemetry from Scrapy Cloud.
 
-   For each feed we know the Scrapy Cloud project (parsed from its job link)
-   and spider name (customfield_14219). We ask HubStorage's jobq for that
-   spider's latest job and read: item count (real records delivered), state,
-   close-reason, error count, and finish time. This powers per-feed telemetry,
-   a portfolio records-delivered rollup, and a job-health flag.
+   Resolution model (per the DOD setup):
+     • The Epic stores its Scrapy Cloud PRODUCTION and DEVELOPMENT project ids
+       ("Scrapycloud Production/Development Project", cf_14254/14255) plus the
+       data org ("Zyte Data Org", cf_13556).
+     • Each feed (Crawling-Component) carries its Spider Name (cf_14219). If that
+       field is empty we derive the spider from the site domain in the summary
+       (e.g. "…- smartandfinal.com" → "smartandfinal_com").
+     • For each feed we look the spider up in the production project first, then
+       the development project, and pull its recent jobs.
 
-   Classic Scrapy Cloud API: HTTP Basic auth, API key as the username with an
-   empty password. Base defaults to storage.scrapinghub.com (override with
-   SCRAPYCLOUD_BASE). All best-effort with graceful fallback + [scrapy] logs.
+   Jobs API (app.zyte.com): GET /api/jobs/list.json?project={id}&spider={name}
+   — HTTP Basic auth, API key as the username with an empty password. Each job:
+   items_scraped, errors_count, state, close_reason, started_time, updated_time.
+   Spiders run per-store, so a spider has many jobs: we take the latest for
+   state/health and sum recent runs for volume. Best-effort with graceful
+   fallback + [scrapy] logs; results cached hourly in Supabase.
    ========================================================================= */
 import { createClient } from '@supabase/supabase-js';
+import { deriveSpiderName } from './_map.js';
 
 const SC_KEY = process.env.SCRAPYCLOUD_API_KEY || '';
-const SC_BASE = (process.env.SCRAPYCLOUD_BASE || 'https://storage.scrapinghub.com').replace(/\/+$/, '');
+const SC_BASE = (process.env.SCRAPYCLOUD_BASE || 'https://app.zyte.com').replace(/\/+$/, '');
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const CACHE_TTL_MS = 60 * 60 * 1000; // crawl telemetry refreshes hourly
 const MAX_FEEDS = 60;                // bound external calls per report
+const JOBS_PER_SPIDER = 20;          // recent-runs window we aggregate over
 
 export const scrapyConfigured = Boolean(SC_KEY);
 
@@ -30,85 +39,121 @@ function authHeader() {
   return 'Basic ' + Buffer.from(`${SC_KEY}:`).toString('base64');
 }
 
-// jobq: latest job for a spider in a project. Returns a compact summary or null.
-async function fetchLatestJob(project, spider) {
-  const url = `${SC_BASE}/jobq/${project}/list?spider=${encodeURIComponent(spider)}&count=1`;
+const ms = (t) => { const n = Date.parse(t); return Number.isFinite(n) ? n : 0; };
+const dateStr = (t) => (t ? String(t).slice(0, 10) : null);
+
+// Recent jobs for one spider in one project. Returns [] on no jobs, null on error.
+async function fetchSpiderJobs(project, spider) {
+  const url = `${SC_BASE}/api/jobs/list.json?project=${encodeURIComponent(project)}`
+    + `&spider=${encodeURIComponent(spider)}&count=${JOBS_PER_SPIDER}`;
   const resp = await fetch(url, { headers: { Authorization: authHeader(), Accept: 'application/json' } });
-  if (!resp.ok) { console.warn('[scrapy] jobq', resp.status, project, spider); return null; }
-  const text = await resp.text();
-  const line = text.split('\n').map((l) => l.trim()).filter(Boolean)[0];
-  if (!line) return null; // no jobs for this spider
-  let j;
-  try { j = JSON.parse(line); } catch { return null; }
-  const finishedMs = j.finished_time || j.ts || null;
+  if (!resp.ok) { console.warn('[scrapy] jobs.list', resp.status, project, spider); return null; }
+  let body;
+  try { body = await resp.json(); } catch { return null; }
+  const jobs = Array.isArray(body && body.jobs) ? body.jobs : [];
+  // The API filters by spider, but verify defensively so we never mis-attribute.
+  return jobs.filter((j) => j && (!spider || j.spider === spider));
+}
+
+// Collapse a spider's recent jobs into the telemetry we surface.
+function summarize(jobs, project, env) {
+  if (!jobs || !jobs.length) return null;
+  const sorted = [...jobs].sort((a, b) => ms(b.started_time) - ms(a.started_time));
+  const latest = sorted[0];
+  const latestFinished = sorted.find((j) => j.state === 'finished') || latest;
+  const state = latest.state || null;
+  const closeReason = latest.close_reason || null;
+  const healthy = state === 'running' || state === 'pending'
+    ? true
+    : state === 'finished' && (!closeReason || closeReason === 'finished');
   return {
-    records: Number.isFinite(j.items) ? j.items : (Number(j.items) || 0),
-    state: j.state || null,                 // finished | running | pending | deleted
-    closeReason: j.close_reason || null,     // finished | cancelled | failed | ...
-    errors: Number(j.errors) || 0,
-    finished: finishedMs ? new Date(finishedMs).toISOString().slice(0, 10) : null,
-    jobKey: j.key || null,
+    records: Number(latestFinished.items_scraped) || 0,       // items in the latest crawl
+    recordsRecent: sorted.reduce((s, j) => s + (Number(j.items_scraped) || 0), 0),
+    runs: sorted.length,
+    state,
+    closeReason,
+    errors: Number(latest.errors_count) || 0,
+    errorsRecent: sorted.reduce((s, j) => s + (Number(j.errors_count) || 0), 0),
+    finished: dateStr(latest.updated_time),
+    healthy,
+    source: env,          // 'prod' | 'dev'
+    project,
+    jobKey: latest.id || null,
   };
 }
 
-// Attach crawl telemetry to each feed that has a Scrapy Cloud project + spider.
-// Mutates feeds in place; returns a short status for diagnostics.
-export async function enrichFeeds(epicKey, feeds) {
-  if (!scrapyConfigured) return { status: 'not-configured', enriched: 0 };
-  const targets = feeds.filter((f) => f.scProject && f.spiderName).slice(0, MAX_FEEDS);
-  if (!targets.length) return { status: 'no-linked-feeds', enriched: 0 };
+function apply(feed, s) {
+  feed.records = s.records;
+  feed.recordsRecent = s.recordsRecent;
+  feed.jobRuns = s.runs;
+  feed.jobState = s.state;
+  feed.jobCloseReason = s.closeReason;
+  feed.jobErrors = s.errors;
+  feed.jobErrorsRecent = s.errorsRecent;
+  feed.jobFinished = s.finished;
+  feed.jobHealthy = !!s.healthy;
+  feed.jobSource = s.source;                 // 'prod' | 'dev'
+  feed.jobProject = s.project;
+  feed.jobKey = s.jobKey;
+  feed.jobUrl = s.jobKey ? `https://app.zyte.com/p/${s.jobKey}`
+    : (s.project ? `https://app.zyte.com/p/${s.project}` : null);
+}
 
-  // Cache read (one query for all keys).
-  const cacheKey = (f) => `${f.scProject}:${f.spiderName}`;
+// Attach crawl telemetry to each feed. scConfig = { prodProject, devProject }.
+// Mutates feeds in place; returns a short status for diagnostics.
+export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
+  if (!scrapyConfigured) return { status: 'not-configured', enriched: 0 };
+
+  const projects = [
+    { id: scConfig.prodProject, env: 'prod' },
+    { id: scConfig.devProject, env: 'dev' },
+  ].filter((p) => p.id);
+  if (!projects.length) return { status: 'no-projects', enriched: 0 };
+
+  // Resolve each feed's spider (explicit field, else derived from the domain).
+  const targets = [];
+  for (const f of feeds) {
+    const spider = f.spiderName || deriveSpiderName(f.name);
+    if (spider) { f.spiderResolved = spider; targets.push(f); }
+    if (targets.length >= MAX_FEEDS) break;
+  }
+  if (!targets.length) return { status: 'no-spiders', enriched: 0 };
+
+  const cacheKey = (f) => `${epicKey}:${f.key}`;
   const cache = {};
   if (svc) {
     try {
-      const { data } = await svc.from('scrapy_jobs').select('*').in('key', targets.map(cacheKey));
+      const { data } = await svc.from('scrapy_jobs')
+        .select('key, data, fetched_at').in('key', targets.map(cacheKey));
       for (const row of data || []) {
-        if (Date.now() - new Date(row.fetched_at).getTime() < CACHE_TTL_MS) cache[row.key] = row;
+        if (row.data && Date.now() - new Date(row.fetched_at).getTime() < CACHE_TTL_MS) cache[row.key] = row.data;
       }
-    } catch { /* table absent / miss → fetch fresh */ }
+    } catch { /* table absent or pre-migration schema → fetch fresh */ }
   }
 
   let enriched = 0;
   const toCache = [];
   await Promise.all(targets.map(async (f) => {
     const k = cacheKey(f);
-    let job = cache[k];
-    if (job) {
-      apply(f, job);
-      enriched++;
-      return;
-    }
+    if (cache[k]) { apply(f, cache[k]); enriched++; return; }
     try {
-      const fresh = await fetchLatestJob(f.scProject, f.spiderName);
-      if (fresh) {
-        apply(f, fresh);
-        enriched++;
-        toCache.push({
-          key: k, epic_key: epicKey, records: fresh.records, state: fresh.state,
-          close_reason: fresh.closeReason, errors: fresh.errors, finished_at: fresh.finished,
-          fetched_at: new Date().toISOString(),
-        });
+      let summary = null;
+      for (const p of projects) {          // production first, then development
+        const jobs = await fetchSpiderJobs(p.id, f.spiderResolved);
+        if (jobs && jobs.length) { summary = summarize(jobs, p.id, p.env); break; }
       }
-    } catch (e) { console.warn('[scrapy] feed', f.key, String(e && e.message || e)); }
+      if (summary) {
+        apply(f, summary);
+        enriched++;
+        toCache.push({ key: k, epic_key: epicKey, spider: f.spiderResolved, data: summary, fetched_at: new Date().toISOString() });
+      }
+    } catch (e) { console.warn('[scrapy] feed', f.key, String((e && e.message) || e)); }
   }));
 
   if (svc && toCache.length) {
     try { await svc.from('scrapy_jobs').upsert(toCache, { onConflict: 'key' }); } catch { /* best-effort */ }
   }
-  console.log('[scrapy]', epicKey, 'linked', targets.length, 'enriched', enriched);
+  console.log('[scrapy]', epicKey, 'projects', projects.map((p) => `${p.env}:${p.id}`).join(','),
+    'spiders', targets.length, 'enriched', enriched);
   return { status: enriched ? 'ok' : 'no-jobs', enriched };
-}
-
-function apply(feed, job) {
-  // Cache rows use snake_case; live jobs use camelCase — normalize both.
-  feed.records = Number(job.records) || 0;
-  feed.jobState = job.state || null;
-  feed.jobErrors = Number(job.errors) || 0;
-  feed.jobCloseReason = job.closeReason ?? job.close_reason ?? null;
-  feed.jobFinished = job.finished ?? job.finished_at ?? null;
-  // Health: problem if the latest job didn't finish cleanly or logged errors.
-  const cr = feed.jobCloseReason;
-  feed.jobHealthy = feed.jobState === 'finished' && (!cr || cr === 'finished') && !feed.jobErrors;
 }

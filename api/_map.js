@@ -38,6 +38,10 @@ export const CF = {
   spiderName: 'customfield_14219',        // Scrapy Cloud spider name (naming convention)
   jobLinkFull: 'customfield_14250',       // "Job Link(s)" — full-crawl app.zyte.com/p/{proj}/{spider}/{job}
   jobLinkSample: 'customfield_14251',     // "Sampling Job Link(s)"
+  // --- Epic-level Scrapy Cloud linkage (drives the Technical View) ---
+  zyteDataOrg: 'customfield_13556',       // "Zyte Data Org" — app.zyte.com/o/{org}
+  scProdProject: 'customfield_14254',     // "Scrapycloud Production Project" — app.zyte.com/p/{id}
+  scDevProject: 'customfield_14255',      // "Scrapycloud Development Project" — app.zyte.com/p/{id}
   subscriptionPrice: 'customfield_13599', // per-feed price (sums to the Epic MRR Value)
   // --- technical config (internal Technical View) ---
   feedSchema: 'customfield_13726',        // Feed Schema (bitbucket JSON schema link)
@@ -80,6 +84,7 @@ export const EPIC_DETAIL_FIELDS = [
   CF.scope, CF.outOfScope, CF.projectStatus, CF.solutionArchitect, CF.slack,
   CF.sfOpportunity, CF.sows, CF.satForm, CF.satLink,
   CF.setupFee, CF.mrrValue, CF.mrrPeriods, CF.margin,
+  CF.zyteDataOrg, CF.scProdProject, CF.scDevProject,
 ];
 
 export const CHILD_FIELDS = ['summary', 'status', 'issuetype', 'created', 'resolutiondate'];
@@ -150,6 +155,24 @@ export function firstLink(field) {
   const text = adfText(field);
   const m = text.match(/https?:\/\/\S+/);
   return m ? m[0] : null;
+}
+
+// Parse a numeric id out of a Zyte Cloud URL. kind 'p' → project, 'o' → org.
+// Accepts a raw string or an ADF/link field.
+export function parseZyteId(field, kind = 'p') {
+  const url = firstLink(field) || (typeof field === 'string' ? field : '');
+  const m = String(url || '').match(new RegExp(`/${kind}/(\\d+)`));
+  return m ? m[1] : null;
+}
+
+// Feeds without an explicit "Spider Name" field: derive the Scrapy Cloud spider
+// from the site domain in the feed summary, matching the team's convention
+// (e.g. "…- smartandfinal.com" → "smartandfinal_com", "bigy.com" → "bigy_com").
+export function deriveSpiderName(feedName) {
+  const s = stripPrefix(feedName) || String(feedName || '');
+  const m = s.match(/([a-z0-9-]+(?:\.[a-z0-9-]+)+)/i); // a domain-ish token
+  if (!m) return null;
+  return m[1].toLowerCase().replace(/^www\./, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 }
 
 // RAG select → 'green' | 'amber' | 'red' | 'blue' | 'grey' | null.
@@ -328,6 +351,9 @@ export function mapEpicDetail(issue, { internal = false } = {}) {
   };
 
   if (internal) {
+    const scOrg = parseZyteId(f[CF.zyteDataOrg], 'o');
+    const scProd = parseZyteId(f[CF.scProdProject], 'p');
+    const scDev = parseZyteId(f[CF.scDevProject], 'p');
     detail.internal = {
       margin: num(f[CF.margin]),
       solutionArchitect: personName(f[CF.solutionArchitect]),
@@ -338,6 +364,14 @@ export function mapEpicDetail(issue, { internal = false } = {}) {
         { label: 'SAT form', url: firstLink(f[CF.satForm]) },
         { label: 'SAT ticket', url: firstLink(f[CF.satLink]) },
       ].filter((l) => l.url),
+      scrapy: {
+        org: scOrg,
+        prodProject: scProd,
+        devProject: scDev,
+        orgUrl: scOrg ? `https://app.zyte.com/o/${scOrg}` : null,
+        prodUrl: scProd ? `https://app.zyte.com/p/${scProd}` : null,
+        devUrl: scDev ? `https://app.zyte.com/p/${scDev}` : null,
+      },
     };
   }
   return detail;

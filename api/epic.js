@@ -12,7 +12,7 @@
    ========================================================================= */
 import { getUserScope, requireJira, fetchIssue, fetchIssues } from './_access.js';
 import {
-  EPIC_DETAIL_FIELDS, FEED_FIELDS, CF, firstLink, mapEpicDetail, mapFeed, derivePhase, PHASES,
+  EPIC_DETAIL_FIELDS, FEED_FIELDS, CF, firstLink, parseZyteId, mapEpicDetail, mapFeed, derivePhase, PHASES,
 } from './_map.js';
 import { getSowPricing, domainKey } from './sow.js';
 import { enrichFeeds } from './scrapy.js';
@@ -82,9 +82,14 @@ export default async function handler(req, res) {
     }
 
     // Enrich feeds with live Scrapy Cloud crawl telemetry (best-effort).
+    // The Epic points at its production + development Scrapy Cloud projects;
+    // each feed's spider is looked up there (see api/scrapy.js).
     let scrapyStatus = null;
     try {
-      const sc = await enrichFeeds(key, feeds);
+      const sc = await enrichFeeds(key, feeds, {
+        prodProject: parseZyteId(epic.fields[CF.scProdProject], 'p'),
+        devProject: parseZyteId(epic.fields[CF.scDevProject], 'p'),
+      });
       scrapyStatus = sc.status;
     } catch (e) { scrapyStatus = 'error'; }
 
