@@ -11,18 +11,22 @@
      • For each feed we look the spider up in the production project first, then
        the development project, and pull its recent jobs.
 
-   Jobs API (app.zyte.com): GET /api/jobs/list.json?project={id}&spider={name}
-   — HTTP Basic auth, API key as the username with an empty password. Each job:
-   items_scraped, errors_count, state, close_reason, started_time, updated_time.
-   Spiders run per-store, so a spider has many jobs: we take the latest for
-   state/health and sum recent runs for volume. Best-effort with graceful
-   fallback + [scrapy] logs; results cached hourly in Supabase.
+   Jobs come from the HubStorage API (storage.scrapinghub.com), which is built
+   for programmatic API-key access — HTTP Basic auth, API key as the username,
+   empty password. GET /jobq/{project}/list?spider={name}&count=N returns recent
+   jobs (JSON lines) with items, errors, state, close_reason, timestamps.
+   (The app.zyte.com/api/jobs/list.json route is browser-facing and 503s behind
+   Cloudflare for server-side calls, so we don't use it.) Spiders run per-store,
+   so a spider has many jobs: we take the latest for state/health and sum recent
+   runs for volume. Best-effort + [scrapy] logs; results cached hourly.
    ========================================================================= */
 import { createClient } from '@supabase/supabase-js';
 import { deriveSpiderName } from './_map.js';
 
 const SC_KEY = process.env.SCRAPYCLOUD_API_KEY || '';
-const SC_BASE = (process.env.SCRAPYCLOUD_BASE || 'https://app.zyte.com').replace(/\/+$/, '');
+const SC_BASE = (process.env.SCRAPYCLOUD_BASE || 'https://storage.scrapinghub.com').replace(/\/+$/, '');
+// The org→projects listing lives on the app host (used only by the org fallback).
+const SC_APP_BASE = (process.env.SCRAPYCLOUD_APP_BASE || 'https://app.zyte.com').replace(/\/+$/, '');
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const CACHE_TTL_MS = 60 * 60 * 1000; // crawl telemetry refreshes hourly
@@ -47,7 +51,7 @@ const dateStr = (t) => (t ? String(t).slice(0, 10) : null);
 const ORG_PROJECTS = new Map();
 async function orgProjects(org) {
   if (ORG_PROJECTS.has(org)) return ORG_PROJECTS.get(org);
-  const url = `${SC_BASE}/api/v2/projects?organization=${encodeURIComponent(org)}&show=all&page_size=10000`;
+  const url = `${SC_APP_BASE}/api/v2/projects?organization=${encodeURIComponent(org)}&show=all&page_size=10000`;
   let list = [];
   try {
     const resp = await fetch(url, { headers: { Authorization: authHeader(), Accept: 'application/json' } });
@@ -76,23 +80,41 @@ function rankProjects(projects) {
   return ordered.slice(0, 6);
 }
 
-// Recent jobs for one spider in one project. Returns [] on no jobs, null on error.
-// `probe` accumulates HTTP outcomes so we can surface why nothing came back.
+// Normalize a HubStorage jobq record to the shape summarize() expects.
+// jobq times are epoch-ms numbers; item/error counts are `items`/`errors`.
+function normalizeJob(j) {
+  const start = j.running_time || j.ts || null;
+  const end = j.finished_time || j.ts || null;
+  return {
+    spider: j.spider || null,
+    state: j.state || null,
+    close_reason: j.close_reason || null,
+    items_scraped: Number(j.items) || 0,
+    errors_count: Number(j.errors) || 0,
+    started_time: start ? new Date(start).toISOString() : null,
+    updated_time: end ? new Date(end).toISOString() : null,
+    id: j.key || null,
+  };
+}
+
+// Recent jobs for one spider in one project, from HubStorage's jobq (JSON lines).
+// Returns [] on no jobs, null on error. `probe` accumulates HTTP outcomes.
 async function fetchSpiderJobs(project, spider, probe) {
-  const url = `${SC_BASE}/api/jobs/list.json?project=${encodeURIComponent(project)}`
-    + `&spider=${encodeURIComponent(spider)}&count=${JOBS_PER_SPIDER}`;
+  const url = `${SC_BASE}/jobq/${encodeURIComponent(project)}/list`
+    + `?spider=${encodeURIComponent(spider)}&count=${JOBS_PER_SPIDER}`;
   probe.calls++;
-  const resp = await fetch(url, { headers: { Authorization: authHeader(), Accept: 'application/json' } });
+  const resp = await fetch(url, { headers: { Authorization: authHeader() } });
   if (!resp.ok) {
     probe.status[resp.status] = (probe.status[resp.status] || 0) + 1;
-    console.warn('[scrapy] jobs.list', resp.status, project, spider);
+    console.warn('[scrapy] jobq', resp.status, project, spider);
     return null;
   }
   probe.ok++;
-  let body;
-  try { body = await resp.json(); } catch { return null; }
-  const jobs = Array.isArray(body && body.jobs) ? body.jobs : [];
-  // The API filters by spider, but verify defensively so we never mis-attribute.
+  const text = await resp.text();
+  const jobs = text.split('\n').map((l) => l.trim()).filter(Boolean)
+    .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(Boolean).map(normalizeJob);
+  // Verify the spider defensively so we never mis-attribute a job.
   return jobs.filter((j) => j && (!spider || j.spider === spider));
 }
 
