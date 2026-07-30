@@ -42,6 +42,40 @@ function authHeader() {
 const ms = (t) => { const n = Date.parse(t); return Number.isFinite(n) ? n : 0; };
 const dateStr = (t) => (t ? String(t).slice(0, 10) : null);
 
+// org → its projects, cached per warm instance. Used only when the Epic has no
+// explicit production/development project set (falls back to the data org).
+const ORG_PROJECTS = new Map();
+async function orgProjects(org) {
+  if (ORG_PROJECTS.has(org)) return ORG_PROJECTS.get(org);
+  const url = `${SC_BASE}/api/v2/projects?organization=${encodeURIComponent(org)}&show=all&page_size=10000`;
+  let list = [];
+  try {
+    const resp = await fetch(url, { headers: { Authorization: authHeader(), Accept: 'application/json' } });
+    if (resp.ok) {
+      const body = await resp.json();
+      // SECURITY: this payload also carries customer API keys in `settings` —
+      // only ever read id/name/last_activity, and never log the raw response.
+      list = (Array.isArray(body && body.results) ? body.results : [])
+        .filter((p) => p && !p.deleted)
+        .map((p) => ({ id: p.id, name: String(p.name || ''), lastActivity: p.last_activity || '' }));
+    } else { console.warn('[scrapy] projects', resp.status, org); }
+  } catch (e) { console.warn('[scrapy] projects', org, String((e && e.message) || e)); }
+  ORG_PROJECTS.set(org, list);
+  return list;
+}
+
+// Rank an org's projects to the production/development candidates to search,
+// most-recently-active first, capped so we never fan out over an entire org.
+function rankProjects(projects) {
+  const recent = (a, b) => ms(b.lastActivity) - ms(a.lastActivity);
+  const prod = projects.filter((p) => /prod/i.test(p.name)).sort(recent).map((p) => ({ ...p, env: 'prod' }));
+  const dev = projects.filter((p) => /dev/i.test(p.name)).sort(recent).map((p) => ({ ...p, env: 'dev' }));
+  const seen = new Set();
+  const ordered = [];
+  for (const p of [...prod, ...dev]) { if (!seen.has(p.id)) { seen.add(p.id); ordered.push(p); } }
+  return ordered.slice(0, 6);
+}
+
 // Recent jobs for one spider in one project. Returns [] on no jobs, null on error.
 async function fetchSpiderJobs(project, spider) {
   const url = `${SC_BASE}/api/jobs/list.json?project=${encodeURIComponent(project)}`
@@ -104,11 +138,18 @@ function apply(feed, s) {
 export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
   if (!scrapyConfigured) return { status: 'not-configured', enriched: 0 };
 
-  const projects = [
+  // Prefer the explicit prod/dev project fields on the Epic; otherwise fall
+  // back to listing the data org and picking its prod/dev projects by name.
+  let projects = [
     { id: scConfig.prodProject, env: 'prod' },
     { id: scConfig.devProject, env: 'dev' },
   ].filter((p) => p.id);
-  if (!projects.length) return { status: 'no-projects', enriched: 0 };
+  let via = 'epic-projects';
+  if (!projects.length && scConfig.org) {
+    projects = rankProjects(await orgProjects(scConfig.org));
+    via = 'org-listing';
+  }
+  if (!projects.length) return { status: scConfig.org ? 'no-projects-in-org' : 'no-projects', enriched: 0 };
 
   // Resolve each feed's spider (explicit field, else derived from the domain).
   const targets = [];
@@ -153,7 +194,7 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
   if (svc && toCache.length) {
     try { await svc.from('scrapy_jobs').upsert(toCache, { onConflict: 'key' }); } catch { /* best-effort */ }
   }
-  console.log('[scrapy]', epicKey, 'projects', projects.map((p) => `${p.env}:${p.id}`).join(','),
+  console.log('[scrapy]', epicKey, 'via', via, 'projects', projects.map((p) => `${p.env}:${p.id}`).join(','),
     'spiders', targets.length, 'enriched', enriched);
   return { status: enriched ? 'ok' : 'no-jobs', enriched };
 }

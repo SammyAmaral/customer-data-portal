@@ -33,9 +33,10 @@ function jobColor(f) {
 }
 const SCRAPY_NOTE = {
   'not-configured': 'Scrapy Cloud isn’t connected yet — cards show the Jira configuration only.',
-  'no-projects': 'This engagement has no Scrapy Cloud production/development project set on the Epic — cards show the Jira configuration only.',
+  'no-projects': 'This Epic has no Scrapy Cloud project or data org set (cf 14254/14255/13556) — cards show the Jira configuration only.',
+  'no-projects-in-org': 'No production/development project was found in this engagement’s Scrapy Cloud org — cards show the Jira configuration only.',
   'no-spiders': 'No feed has a spider name (and none could be derived from the site) — cards show the Jira configuration only.',
-  'no-jobs': 'The spiders have no crawl jobs in the production or development project yet — cards show the Jira configuration only.',
+  'no-jobs': 'The spiders were found but have no crawl jobs in the production or development project yet — cards show the Jira configuration only.',
   error: 'Couldn’t reach Scrapy Cloud — cards show the Jira configuration only.',
 };
 

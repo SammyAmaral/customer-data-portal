@@ -89,6 +89,7 @@ export default async function handler(req, res) {
       const sc = await enrichFeeds(key, feeds, {
         prodProject: parseZyteId(epic.fields[CF.scProdProject], 'p'),
         devProject: parseZyteId(epic.fields[CF.scDevProject], 'p'),
+        org: parseZyteId(epic.fields[CF.zyteDataOrg], 'o'),
       });
       scrapyStatus = sc.status;
     } catch (e) { scrapyStatus = 'error'; }
