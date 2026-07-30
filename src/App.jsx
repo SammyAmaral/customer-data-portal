@@ -1,13 +1,16 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { LogOut } from 'lucide-react';
+import { LogOut, LayoutGrid, FileText, Wrench, Menu, ChevronRight } from 'lucide-react';
 import { getSession, onAuthChange, signOut, isConfigured } from './lib/auth.js';
 import { useHashRoute, navigate } from './lib/router.js';
+import { ToastProvider } from './lib/toast.jsx';
+import { ChromeProvider, useChrome } from './lib/chrome.jsx';
 import SignIn from './views/SignIn.jsx';
 import Portfolio from './views/Portfolio.jsx';
 import Report from './views/Report.jsx';
 import TechView from './views/TechView.jsx';
 
 export const RETURN_KEY = 'cdp_return';
+const APP_NAME = 'Customer Data Portal';
 
 export default function App() {
   const [session, setSession] = useState(null);
@@ -29,42 +32,134 @@ export default function App() {
   }, []);
 
   const handleSignOut = useCallback(async () => { await signOut(); navigate(''); }, []);
-
-  let body;
-  if (!ready) {
-    body = <div className="cdp-center"><div className="cdp-spinner" /></div>;
-  } else if (!isConfigured || !session) {
-    body = <SignIn configured={isConfigured} />;
-  } else if (route.name === 'report') {
-    body = <Report epicKey={route.key} />;
-  } else if (route.name === 'tech') {
-    body = <TechView epicKey={route.key} />;
-  } else {
-    body = <Portfolio />;
-  }
-
   const email = session && session.user && session.user.email;
 
   return (
     <div className="cdp-root">
       <style>{CSS}</style>
-      {session && (
-        <header className="cdp-topbar">
-          <button className="cdp-brand" onClick={() => navigate('')} aria-label="Home">
-            <span className="cdp-wordmark">zyte</span>
-            <span className="cdp-brand-underline" />
-            <span className="cdp-brand-app">Customer Data Portal</span>
-          </button>
-          <div className="cdp-topbar-right">
-            {email && <span className="cdp-user" title={email}>{email}</span>}
-            <button className="cdp-btn cdp-btn-ghost" onClick={handleSignOut}>
-              <LogOut size={15} /> Sign out
-            </button>
-          </div>
-        </header>
-      )}
-      {body}
+      <ToastProvider>
+        <ChromeProvider>
+          <Shell ready={ready} session={session} route={route} email={email} onSignOut={handleSignOut} />
+        </ChromeProvider>
+      </ToastProvider>
     </div>
+  );
+}
+
+function cls(base, on, name = 'open') { return on ? `${base} ${name}` : base; }
+
+function Shell({ ready, session, route, email, onSignOut }) {
+  const { engagement } = useChrome();
+  const [navOpen, setNavOpen] = useState(false);
+
+  const signedIn = isConfigured && session;
+  const engOpen = route.name === 'report' || route.name === 'tech';
+  const eng = engagement && engagement.key === route.key ? engagement : null;
+  const engLabel = eng ? eng.customer : route.key;
+
+  // Close the mobile drawer on navigation; Esc also closes it.
+  useEffect(() => { setNavOpen(false); }, [route.name, route.key]);
+  useEffect(() => {
+    if (!navOpen) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setNavOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navOpen]);
+
+  // Per-route document title.
+  useEffect(() => {
+    let t = `Portfolio · ${APP_NAME}`;
+    if (!signedIn) t = `Sign in · ${APP_NAME}`;
+    else if (route.name === 'report') t = `${engLabel} · Status · ${APP_NAME}`;
+    else if (route.name === 'tech') t = `${engLabel} · Technical · ${APP_NAME}`;
+    document.title = t;
+  }, [signedIn, route.name, engLabel]);
+
+  if (!ready) return <div className="cdp-center"><div className="cdp-spinner" /></div>;
+  if (!signedIn) return <SignIn configured={isConfigured} />;
+
+  let body;
+  if (route.name === 'report') body = <Report epicKey={route.key} />;
+  else if (route.name === 'tech') body = <TechView epicKey={route.key} />;
+  else body = <Portfolio />;
+
+  const initial = (email || '?').trim().charAt(0).toUpperCase();
+
+  return (
+    <div className="cdp-shell">
+      <button className="cdp-skip" onClick={() => { const m = document.getElementById('cdp-main'); if (m) { m.focus(); m.scrollIntoView(); } }}>
+        Skip to content
+      </button>
+      {navOpen && <div className="cdp-backdrop show" onClick={() => setNavOpen(false)} />}
+
+      <aside className={cls('cdp-sidebar', navOpen)}>
+        <button className="cdp-sb-brand" onClick={() => navigate('')} aria-label="Home">
+          <span className="cdp-wordmark">zyte</span>
+          <span className="cdp-brand-underline" />
+          <span className="cdp-brand-app">{APP_NAME}</span>
+        </button>
+
+        <nav className="cdp-nav" aria-label="Primary">
+          <NavItem icon={<LayoutGrid size={17} />} label="Portfolio" active={route.name === 'portfolio'} onClick={() => navigate('')} />
+          {engOpen && (
+            <div className="cdp-navgroup">
+              <div className="gt" title={engLabel}>{engLabel}</div>
+              <NavItem icon={<FileText size={17} />} label="Status report" active={route.name === 'report'} onClick={() => navigate(`#/report/${route.key}`)} />
+              {eng && eng.internal && (
+                <NavItem icon={<Wrench size={17} />} label="Technical view" active={route.name === 'tech'} onClick={() => navigate(`#/tech/${route.key}`)} />
+              )}
+            </div>
+          )}
+        </nav>
+
+        <div className="cdp-sb-foot">
+          <div className="cdp-sb-user">
+            <span className="cdp-avatar">{initial}</span>
+            {email && <span className="cdp-user" title={email}>{email}</span>}
+          </div>
+          <button className="cdp-btn cdp-btn-ghost" onClick={onSignOut} style={{ justifyContent: 'center' }}>
+            <LogOut size={15} /> Sign out
+          </button>
+        </div>
+      </aside>
+
+      <div className="cdp-main">
+        <header className="cdp-appbar">
+          <button className="cdp-hamburger cdp-btn cdp-btn-ghost" onClick={() => setNavOpen((v) => !v)} aria-label="Toggle menu" aria-expanded={navOpen}>
+            <Menu size={16} />
+          </button>
+          <nav className="cdp-crumbs" aria-label="Breadcrumb">
+            <button onClick={() => navigate('')}>Portfolio</button>
+            {engOpen && (
+              <>
+                <ChevronRight size={14} className="sep" />
+                {route.name === 'tech'
+                  ? <button onClick={() => navigate(`#/report/${route.key}`)}>{engLabel}</button>
+                  : <span className="cur" title={engLabel}>{engLabel}</span>}
+              </>
+            )}
+            {route.name === 'tech' && (
+              <>
+                <ChevronRight size={14} className="sep" />
+                <span className="cur">Technical</span>
+              </>
+            )}
+          </nav>
+        </header>
+
+        <main id="cdp-main" tabIndex={-1} className="cdp-viewport" key={`${route.name}:${route.key || ''}`}>
+          {body}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function NavItem({ icon, label, active, onClick }) {
+  return (
+    <button className={cls('cdp-navitem', active, 'active')} onClick={onClick} aria-current={active ? 'page' : undefined}>
+      {icon}<span>{label}</span>
+    </button>
   );
 }
 
@@ -74,25 +169,58 @@ const CSS = `
   --ink:#0B1E3B; --navy-deep:#171C50; --navy:#123A6B; --blue:#2F6FED;
   --blue-bright:#5B9BFF; --blue-tint:#EEF3FC; --grad-violet:#6B1B96; --grad-red:#F23039;
   --paper:#FFFFFF; --slate:#5C6B84; --line:#E3E9F5; --wash:#F4F7FD;
-  --rag-green:#0E9C78; --rag-amber:#D68A34; --rag-red:#C4432F;
-  --maxw:1320px;
+  --rag-green:#0E9C78; --rag-amber:#D68A34; --rag-red:#C4432F; --amber:#D68A34;
+  --maxw:1320px; --sbw:250px;
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:22px;
+  --sh-1:0 1px 2px rgba(18,58,107,.06); --sh-2:0 10px 30px -18px rgba(18,58,107,.5); --sh-3:0 30px 80px -30px rgba(0,0,0,.45);
   font-family:'Inter',system-ui,sans-serif; color:var(--ink);
   background:var(--wash); min-height:100vh; -webkit-font-smoothing:antialiased;
 }
 .cdp-root *{box-sizing:border-box;}
 .cdp-eyebrow{font-family:'IBM Plex Mono',monospace;letter-spacing:.14em;text-transform:uppercase;font-size:11px;font-weight:500;}
 a{color:var(--blue);text-decoration:none;} a:hover{text-decoration:underline;}
+.cdp-root :focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px;}
+.cdp-skip{position:absolute;left:-9999px;top:8px;z-index:100;background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 13px;font:inherit;font-weight:600;cursor:pointer;}
+.cdp-skip:focus{left:12px;}
 
-/* ---- top bar ---- */
-.cdp-topbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
-  gap:16px;padding:12px 28px;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);
-  border-bottom:1px solid var(--line);}
+/* ---- brand bits (shared: sidebar + sign-in) ---- */
 .cdp-brand{display:flex;align-items:center;gap:10px;background:none;border:0;cursor:pointer;padding:0;}
 .cdp-wordmark{font-family:'Sora',sans-serif;font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--navy-deep);}
 .cdp-brand-underline{width:22px;height:3px;border-radius:2px;background:linear-gradient(90deg,var(--grad-violet),var(--grad-red));}
-.cdp-brand-app{font-family:'Sora',sans-serif;font-weight:600;font-size:14px;color:var(--slate);padding-left:6px;border-left:1px solid var(--line);}
-.cdp-topbar-right{display:flex;align-items:center;gap:12px;}
-.cdp-user{font-size:12.5px;color:var(--slate);max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdp-brand-app{font-family:'Sora',sans-serif;font-weight:600;font-size:13px;color:var(--slate);}
+.cdp-user{font-size:12px;color:var(--slate);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* ---- app shell (sidebar + appbar) ---- */
+.cdp-shell{display:flex;min-height:100vh;align-items:stretch;}
+.cdp-sidebar{position:sticky;top:0;height:100vh;width:var(--sbw);flex:0 0 var(--sbw);z-index:30;
+  display:flex;flex-direction:column;gap:4px;padding:18px 14px;background:#fff;border-right:1px solid var(--line);}
+.cdp-sb-brand{display:flex;align-items:center;gap:9px;flex-wrap:wrap;background:none;border:0;cursor:pointer;padding:4px 8px 16px;text-align:left;}
+.cdp-sb-brand .cdp-brand-app{width:100%;padding-top:2px;}
+.cdp-nav{display:flex;flex-direction:column;gap:3px;overflow-y:auto;}
+.cdp-navitem{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;border:0;border-radius:10px;background:none;
+  font:inherit;font-size:13.5px;font-weight:600;color:var(--slate);cursor:pointer;text-align:left;transition:.13s;}
+.cdp-navitem:hover{background:var(--wash);color:var(--ink);}
+.cdp-navitem.active{background:var(--blue-tint);color:var(--navy);}
+.cdp-navitem svg{flex:0 0 auto;opacity:.9;}
+.cdp-navgroup{margin-top:14px;display:flex;flex-direction:column;gap:3px;}
+.cdp-navgroup .gt{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--slate);
+  padding:0 11px;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdp-sb-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:9px;}
+.cdp-sb-user{display:flex;align-items:center;gap:9px;padding:0 6px;}
+.cdp-avatar{width:28px;height:28px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;color:#fff;
+  font-family:'Sora',sans-serif;font-weight:700;font-size:12px;background:linear-gradient(135deg,var(--blue),var(--grad-violet));}
+.cdp-main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.cdp-appbar{position:sticky;top:0;z-index:15;display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 22px;
+  background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);}
+.cdp-hamburger{display:none;padding:7px 9px;}
+.cdp-crumbs{display:flex;align-items:center;gap:7px;font-size:13px;min-width:0;}
+.cdp-crumbs button{background:none;border:0;cursor:pointer;color:var(--slate);font:inherit;font-weight:600;padding:0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdp-crumbs button:hover{color:var(--blue);}
+.cdp-crumbs .sep{color:#C6D2E8;flex:0 0 auto;}
+.cdp-crumbs .cur{color:var(--ink);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdp-viewport{flex:1;animation:cdpFade .28s ease both;}
+.cdp-backdrop{position:fixed;inset:0;background:rgba(11,30,59,.42);z-index:25;}
+@keyframes cdpFade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
 
 /* ---- buttons ---- */
 .cdp-btn{display:inline-flex;align-items:center;gap:7px;font-family:'Inter';font-size:13px;font-weight:600;
@@ -103,7 +231,7 @@ a{color:var(--blue);text-decoration:none;} a:hover{text-decoration:underline;}
 
 /* ---- layout ---- */
 .cdp-wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px 64px;}
-.cdp-center{min-height:70vh;display:flex;align-items:center;justify-content:center;}
+.cdp-center{min-height:70vh;display:flex;align-items:center;justify-content:center;width:100%;}
 .cdp-spinner{width:34px;height:34px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--blue);animation:spin 1s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 
@@ -112,7 +240,7 @@ a{color:var(--blue);text-decoration:none;} a:hover{text-decoration:underline;}
 .cdp-hero::after{content:"";position:absolute;right:-90px;top:-120px;width:340px;height:340px;
   background:radial-gradient(circle,rgba(91,155,255,.16) 0%,rgba(91,155,255,0) 70%);border-radius:50%;}
 .cdp-hero-inner{max-width:var(--maxw);margin:0 auto;padding:34px 28px 30px;position:relative;z-index:1;}
-.cdp-hero h1{font-family:'Sora',sans-serif;font-weight:700;letter-spacing:-.015em;font-size:30px;margin:8px 0 6px;}
+.cdp-hero h1{font-family:'Sora',sans-serif;font-weight:700;letter-spacing:-.015em;font-size:clamp(23px,4vw,30px);margin:8px 0 6px;}
 .cdp-hero p{color:#B9CDF2;font-size:14.5px;margin:0;max-width:640px;}
 .cdp-hero .cdp-eyebrow{color:#9FC0FF;}
 
@@ -148,6 +276,7 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-ptable tbody tr:last-child td{border-bottom:0;}
 .cdp-ptable tbody tr{cursor:pointer;}
 .cdp-ptable tbody tr:hover{background:var(--blue-tint);}
+.cdp-ptable tbody tr:focus-visible{background:var(--blue-tint);outline:2px solid var(--blue);outline-offset:-2px;}
 .cdp-ptable .cust{font-family:'Sora';font-weight:700;font-size:13.5px;color:var(--ink);}
 .cdp-ptable .eng{font-size:12px;color:var(--slate);}
 .cdp-minibar{height:7px;border-radius:4px;background:var(--wash);overflow:hidden;display:flex;min-width:96px;}
@@ -156,7 +285,8 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 /* ---- engagement cards ---- */
 .cdp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;}
 .cdp-card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;cursor:pointer;transition:.16s;display:flex;flex-direction:column;gap:13px;}
-.cdp-card:hover{border-color:var(--blue-bright);box-shadow:0 10px 30px -18px rgba(18,58,107,.5);transform:translateY(-2px);}
+.cdp-card:hover{border-color:var(--blue-bright);box-shadow:var(--sh-2);transform:translateY(-2px);}
+.cdp-card:focus-visible{border-color:var(--blue);box-shadow:var(--sh-2);transform:translateY(-2px);}
 .cdp-card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
 .cdp-card h3{font-family:'Sora',sans-serif;font-weight:700;font-size:16.5px;margin:0;letter-spacing:-.01em;}
 .cdp-card .sub{font-size:12.5px;color:var(--slate);margin-top:3px;}
@@ -175,7 +305,7 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-report-hero{background:linear-gradient(135deg,var(--navy-deep) 0%,var(--navy) 100%);color:#fff;border-radius:20px;padding:24px 26px;position:relative;overflow:hidden;margin-top:12px;}
 .cdp-report-hero::after{content:"";position:absolute;right:-60px;top:-90px;width:260px;height:260px;background:radial-gradient(circle,rgba(91,155,255,.18) 0%,rgba(91,155,255,0) 70%);border-radius:50%;}
 .cdp-report-hero .rh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;position:relative;z-index:1;flex-wrap:wrap;}
-.cdp-report-hero h1{font-family:'Sora',sans-serif;font-weight:700;font-size:26px;letter-spacing:-.015em;margin:6px 0 4px;}
+.cdp-report-hero h1{font-family:'Sora',sans-serif;font-weight:700;font-size:clamp(21px,3.4vw,26px);letter-spacing:-.015em;margin:6px 0 4px;}
 .cdp-report-hero .cust{color:#B9CDF2;font-size:14px;}
 .cdp-biglight{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);border-radius:12px;padding:10px 14px;}
 .cdp-biglight .dot{width:16px;height:16px;border-radius:50%;}
@@ -238,6 +368,25 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-statuschip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;}
 .cdp-statuschip .dot{width:8px;height:8px;border-radius:50%;}
 
+/* ---- skeletons ---- */
+.cdp-sk{display:inline-block;position:relative;overflow:hidden;background:var(--line);border-radius:8px;vertical-align:middle;}
+.cdp-sk::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.65),transparent);animation:cdpShimmer 1.3s infinite;}
+.cdp-sk.on-dark{background:rgba(255,255,255,.14);}
+.cdp-sk.on-dark::after{background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);}
+@keyframes cdpShimmer{100%{transform:translateX(100%);}}
+
+/* ---- toasts ---- */
+.cdp-toaster{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;flex-direction:column;gap:10px;max-width:calc(100vw - 40px);}
+.cdp-toast{display:flex;align-items:center;gap:10px;min-width:230px;background:var(--ink);color:#fff;border-radius:12px;padding:11px 12px 11px 14px;font-size:13px;font-weight:500;box-shadow:0 18px 40px -18px rgba(0,0,0,.6);animation:cdpToastIn .22s ease both;}
+.cdp-toast .ic{display:flex;flex:0 0 auto;}
+.cdp-toast.success .ic{color:#5DCAA5;}
+.cdp-toast.error{background:#7A1E12;} .cdp-toast.error .ic{color:#FFB4A6;}
+.cdp-toast.info .ic{color:var(--blue-bright);}
+.cdp-toast .msg{flex:1;}
+.cdp-toast .x{background:none;border:0;color:rgba(255,255,255,.6);cursor:pointer;display:flex;padding:2px;border-radius:6px;}
+.cdp-toast .x:hover{color:#fff;background:rgba(255,255,255,.12);}
+@keyframes cdpToastIn{from{opacity:0;transform:translateY(10px) scale(.98);}to{opacity:1;transform:none;}}
+
 /* ---- states / signin ---- */
 .cdp-signin{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,var(--navy-deep) 0%,var(--navy) 60%,#0d2748 100%);}
 .cdp-signin-card{background:#fff;border-radius:22px;padding:40px 38px;width:min(430px,92vw);box-shadow:0 40px 90px -40px rgba(0,0,0,.6);}
@@ -257,15 +406,35 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-emptystate{background:#fff;border:1px dashed var(--line);border-radius:18px;padding:48px;text-align:center;color:var(--slate);}
 .cdp-emptystate h3{font-family:'Sora';color:var(--ink);margin:0 0 8px;}
 
+/* ---- responsive ---- */
+@media(max-width:960px){
+  .cdp-sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--sh-3);}
+  .cdp-sidebar.open{transform:none;}
+  .cdp-hamburger{display:inline-flex;}
+}
+@media(min-width:961px){ .cdp-backdrop{display:none;} }
 @media(max-width:860px){
   .cdp-metacards,.cdp-report-body,.cdp-report-narrative{grid-template-columns:1fr;}
   .cdp-stepper{flex-wrap:wrap;}
+}
+@media(max-width:600px){
+  .cdp-wrap{padding:0 16px 48px;}
+  .cdp-hero-inner{padding:26px 16px 24px;}
+  .cdp-appbar{padding:10px 14px;}
+  .cdp-report-hero{padding:20px 18px;}
+  .cdp-kpis{gap:10px;}
+}
+@media(prefers-reduced-motion:reduce){
+  .cdp-viewport,.cdp-toast{animation:none;}
+  .cdp-sk::after{animation:none;}
+  .cdp-card:hover{transform:none;}
 }
 
 /* ---- print (customer PDF export) ---- */
 @media print{
   .cdp-root{background:#fff;}
-  .cdp-topbar,.cdp-actions,.cdp-backlink{display:none !important;}
+  .cdp-sidebar,.cdp-appbar,.cdp-actions,.cdp-backlink,.cdp-toaster,.cdp-skip{display:none !important;}
+  .cdp-main{display:block;}
   .cdp-report-hero{background:var(--navy-deep) !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .cdp-card,.cdp-metacard,.cdp-panel,.cdp-stepper,.cdp-table thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .cdp-report-narrative{grid-template-columns:1fr 1fr;}

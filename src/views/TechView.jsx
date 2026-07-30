@@ -12,6 +12,9 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, RefreshCw, ExternalLink } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
+import { useChrome } from '../lib/chrome.jsx';
+import { useToast } from '../lib/toast.jsx';
+import { TechSkeleton } from '../components/Skeleton.jsx';
 import { fmtMoney, feedToken } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
@@ -70,6 +73,8 @@ export default function TechView({ epicKey }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
+  const toast = useToast();
+  const { setEngagement } = useChrome();
 
   useEffect(() => {
     let alive = true;
@@ -80,6 +85,11 @@ export default function TechView({ epicKey }) {
     return () => { alive = false; };
   }, [epicKey, nonce]);
 
+  // Feed the shell breadcrumb / sidebar once the engagement loads.
+  useEffect(() => {
+    if (data) setEngagement({ key: data.key, customer: data.customer, internal: !!data.internal });
+  }, [data, setEngagement]);
+
   if (error && error.status === 403) return <AccessDenied message={error.message} />;
   if (error) {
     return <div className="cdp-wrap"><div className="cdp-emptystate" style={{ marginTop: 40 }}>
@@ -87,7 +97,7 @@ export default function TechView({ epicKey }) {
       <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/report/${epicKey}`)}><ArrowLeft size={15} /> Status report</button>
     </div></div>;
   }
-  if (!data) return <div className="cdp-center"><div className="cdp-spinner" /></div>;
+  if (!data) return <TechSkeleton />;
 
   // The technical view is strictly internal — the API only fills feed.config
   // for internal callers, so this is a belt-and-braces client gate too.
@@ -117,7 +127,7 @@ export default function TechView({ epicKey }) {
           </div>
         </div>
         <div className="cdp-actions">
-          <button className="cdp-btn cdp-btn-ghost" onClick={() => setNonce((n) => n + 1)}><RefreshCw size={15} /> Refresh</button>
+          <button className="cdp-btn cdp-btn-ghost" onClick={() => { setNonce((n) => n + 1); toast.info('Refreshing…'); }}><RefreshCw size={15} /> Refresh</button>
           {sc.orgUrl && <a className="cdp-btn cdp-btn-ghost" href={sc.orgUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Data org</a>}
           {sc.prodUrl && <a className="cdp-btn cdp-btn-ghost" href={sc.prodUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Prod project</a>}
           {sc.devUrl && <a className="cdp-btn cdp-btn-ghost" href={sc.devUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Dev project</a>}

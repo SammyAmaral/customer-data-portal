@@ -3,13 +3,17 @@ import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench } from
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { fmtDate, fmtMoney, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
+import { useChrome } from '../lib/chrome.jsx';
+import { useToast } from '../lib/toast.jsx';
+import { ReportSkeleton } from '../components/Skeleton.jsx';
 import AccessDenied from './AccessDenied.jsx';
 
 export default function Report({ epicKey }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const toast = useToast();
+  const { setEngagement } = useChrome();
 
   useEffect(() => {
     let alive = true;
@@ -20,11 +24,16 @@ export default function Report({ epicKey }) {
     return () => { alive = false; };
   }, [epicKey, nonce]);
 
+  // Feed the shell breadcrumb / sidebar once the engagement loads.
+  useEffect(() => {
+    if (data) setEngagement({ key: data.key, customer: data.customer, internal: !!data.internal });
+  }, [data, setEngagement]);
+
   const copyLink = useCallback(() => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 1800);
-    }).catch(() => {});
-  }, []);
+    navigator.clipboard.writeText(window.location.href)
+      .then(() => toast.success('Share link copied'))
+      .catch(() => toast.error('Couldn’t copy the link'));
+  }, [toast]);
 
   if (error && error.status === 403) return <AccessDenied message={error.message} />;
   if (error) {
@@ -33,7 +42,7 @@ export default function Report({ epicKey }) {
       <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate('')}><ArrowLeft size={15} /> Back</button>
     </div></div>;
   }
-  if (!data) return <div className="cdp-center"><div className="cdp-spinner" /></div>;
+  if (!data) return <ReportSkeleton />;
 
   const rt = ragToken(data.rag);
   const phase = data.phase || { index: 0, steps: [] };
@@ -67,8 +76,8 @@ export default function Report({ epicKey }) {
           </div>
         </div>
         <div className="cdp-actions">
-          <button className="cdp-btn cdp-btn-ghost" onClick={() => setNonce((n) => n + 1)}><RefreshCw size={15} /> Refresh</button>
-          <button className="cdp-btn cdp-btn-ghost" onClick={copyLink}><Link2 size={15} /> {copied ? 'Link copied' : 'Copy share link'}</button>
+          <button className="cdp-btn cdp-btn-ghost" onClick={() => { setNonce((n) => n + 1); toast.info('Refreshing…'); }}><RefreshCw size={15} /> Refresh</button>
+          <button className="cdp-btn cdp-btn-ghost" onClick={copyLink}><Link2 size={15} /> Copy share link</button>
           <button className="cdp-btn cdp-btn-ghost" onClick={() => window.print()}><Printer size={15} /> Export PDF</button>
           {data.internal && (
             <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/tech/${data.key}`)}><Wrench size={15} /> Technical view</button>

@@ -2,7 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Layers, LayoutGrid, Table, X } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
+import { useChrome } from '../lib/chrome.jsx';
+import { PortfolioSkeleton } from '../components/Skeleton.jsx';
 import { fmtDate, ragToken, cx, donePct, isNotStarted } from '../lib/ui.js';
+
+// Activate a clickable non-button element (card / row) from the keyboard.
+const onActivate = (fn) => (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); } };
 
 // Display label for an engagement's stage: "Not started" while the Epic is
 // still To Do, otherwise the derived phase.
@@ -50,6 +55,10 @@ export default function Portfolio() {
   const [sort, setSort] = useState('updated');
   const [view, setView] = useState('cards');
   const [kpi, setKpi] = useState(null); // active KPI filter key, or null
+  const { setEngagement } = useChrome();
+
+  // On the portfolio there's no open engagement — reset the breadcrumb.
+  useEffect(() => { setEngagement(null); }, [setEngagement]);
 
   useEffect(() => {
     let alive = true;
@@ -132,7 +141,7 @@ export default function Portfolio() {
     return <div className="cdp-wrap"><div className="cdp-emptystate" style={{ marginTop: 40 }}>
       <h3>Couldn’t load your portfolio</h3><p>{error}</p></div></div>;
   }
-  if (!data) return <div className="cdp-center"><div className="cdp-spinner" /></div>;
+  if (!data) return <PortfolioSkeleton />;
 
   const isInternal = data.internal;
 
@@ -253,7 +262,9 @@ function EngagementCard({ e }) {
   const rt = ragToken(e.rag);
   const c = e.feedCounts || { total: 0, done: 0, blocked: 0 };
   return (
-    <div className="cdp-card" onClick={() => navigate(`#/report/${e.key}`)}>
+    <div className="cdp-card" role="button" tabIndex={0}
+      onClick={() => navigate(`#/report/${e.key}`)}
+      onKeyDown={onActivate(() => navigate(`#/report/${e.key}`))}>
       <div className="cdp-card-top">
         <div><h3>{e.customer}</h3><div className="sub">{e.summary}</div></div>
         <span className="cdp-rag"><span className="dot" style={{ background: rt.color }} />{rt.label}</span>
@@ -289,7 +300,9 @@ function PortfolioTable({ rows, showPm }) {
             const rt = ragToken(e.rag);
             const c = e.feedCounts || { total: 0, done: 0 };
             return (
-              <tr key={e.key} onClick={() => navigate(`#/report/${e.key}`)}>
+              <tr key={e.key} role="button" tabIndex={0}
+                onClick={() => navigate(`#/report/${e.key}`)}
+                onKeyDown={onActivate(() => navigate(`#/report/${e.key}`))}>
                 <td><div className="cust">{e.customer}</div><div className="eng">{e.summary}</div></td>
                 <td>{stageLabel(e) ? <span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span> : '—'}</td>
                 <td><span className="cdp-rag"><span className="dot" style={{ background: rt.color }} />{rt.label}</span></td>
