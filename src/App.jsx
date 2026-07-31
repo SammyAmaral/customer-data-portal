@@ -405,6 +405,9 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-field label{font-size:12.5px;font-weight:600;color:var(--slate);}
 .cdp-field input{border:1px solid var(--line);border-radius:11px;padding:12px 14px;font-size:15px;font-family:'Inter';outline:0;}
 .cdp-field input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,111,237,.14);}
+.cdp-btn-google{width:100%;justify-content:center;font-size:14px;padding:11px 14px;gap:10px;}
+.cdp-or{display:flex;align-items:center;gap:12px;color:var(--slate);font-size:12px;margin:16px 0;}
+.cdp-or::before,.cdp-or::after{content:"";flex:1;height:1px;background:var(--line);}
 .cdp-note{font-size:12.5px;color:var(--slate);margin-top:16px;line-height:1.5;}
 .cdp-banner{border-radius:11px;padding:11px 14px;font-size:13px;margin-bottom:16px;}
 .cdp-banner.warn{background:#FFF6E9;border:1px solid #F3D9A6;color:#7A531A;}

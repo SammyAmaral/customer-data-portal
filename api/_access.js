@@ -27,6 +27,10 @@ const SUPABASE_ANON = process.env.SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const INTERNAL_DOMAINS = (process.env.INTERNAL_DOMAINS || 'zyte.com')
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+// When true (the default for now), ONLY internal-domain users get in — the
+// per-customer allow-list is bypassed. Set INTERNAL_ONLY=false to re-enable
+// external customer access via the report_access table.
+const INTERNAL_ONLY = String(process.env.INTERNAL_ONLY || 'true').toLowerCase() !== 'false';
 export const authConfigured = Boolean(SUPABASE_URL && SUPABASE_ANON && SUPABASE_SERVICE);
 
 /* ---- Jira fetch helpers ------------------------------------------------- */
@@ -101,6 +105,11 @@ export async function getUserScope(req) {
   const domain = email.split('@')[1] || '';
   if (INTERNAL_DOMAINS.includes(domain)) {
     return { ok: true, email, internal: true, epicKeys: null };
+  }
+
+  // Internal-only mode: no external access at all (per-customer allow-list off).
+  if (INTERNAL_ONLY) {
+    return { ok: false, status: 403, error: 'This portal is restricted to Zyte staff. Please sign in with your @zyte.com Google account.' };
   }
 
   // External customer: resolve the explicit allow-list with the service role

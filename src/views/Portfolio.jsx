@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Layers, LayoutGrid, Table, X } from 'lucide-react';
+import { Search, Layers, LayoutGrid, Table, X, Lock } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
@@ -76,7 +76,7 @@ export default function Portfolio() {
         setData(d);
         if (!d.internal && d.engagements.length === 1) navigate(`#/report/${d.engagements[0].key}`);
       })
-      .catch((e) => alive && setError(e.message));
+      .catch((e) => alive && setError(e));
     return () => { alive = false; };
   }, []);
 
@@ -181,9 +181,16 @@ export default function Portfolio() {
     return [...filtered].sort(cmp);
   }, [engagements, q, rag, pm, phase, month, sort, kpi, preds]);
 
+  if (error && error.status === 403) {
+    return <div className="cdp-wrap"><div className="cdp-emptystate" style={{ marginTop: 40 }}>
+      <Lock size={30} style={{ color: 'var(--slate)', marginBottom: 12 }} />
+      <h3>Restricted to Zyte staff</h3>
+      <p style={{ maxWidth: 440, margin: '0 auto' }}>{error.message}</p>
+    </div></div>;
+  }
   if (error) {
     return <div className="cdp-wrap"><div className="cdp-emptystate" style={{ marginTop: 40 }}>
-      <h3>Couldn’t load your portfolio</h3><p>{error}</p></div></div>;
+      <h3>Couldn’t load your portfolio</h3><p>{error.message || String(error)}</p></div></div>;
   }
   if (!data) return <PortfolioSkeleton />;
 

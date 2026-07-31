@@ -42,6 +42,22 @@ export async function signInWithEmail(email) {
   if (error) throw error;
 }
 
+// Google OAuth. `hd` nudges Google to the zyte.com workspace (a soft hint —
+// the real Zyte-only enforcement is the server-side domain gate). Redirects to
+// Google, then back to this origin; App restores the intended report after.
+export async function signInWithGoogle() {
+  if (!isConfigured) throw new Error('Sign-in is not configured yet.');
+  if (window.location.hash) localStorage.setItem('cdp_return', window.location.hash);
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin + window.location.pathname,
+      queryParams: { hd: 'zyte.com', prompt: 'select_account' },
+    },
+  });
+  if (error) throw error;
+}
+
 export async function signOut() {
   if (!isConfigured) return;
   await supabase.auth.signOut();
