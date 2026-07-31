@@ -8,6 +8,7 @@ import SignIn from './views/SignIn.jsx';
 import Portfolio from './views/Portfolio.jsx';
 import Report from './views/Report.jsx';
 import TechView from './views/TechView.jsx';
+import SchemaView from './views/SchemaView.jsx';
 
 export const RETURN_KEY = 'cdp_return';
 const APP_NAME = 'Customer Data Portal';
@@ -53,7 +54,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   const [navOpen, setNavOpen] = useState(false);
 
   const signedIn = isConfigured && session;
-  const engOpen = route.name === 'report' || route.name === 'tech';
+  const engOpen = route.name === 'report' || route.name === 'tech' || route.name === 'tech-schema';
   const eng = engagement && engagement.key === route.key ? engagement : null;
   const engLabel = eng ? eng.customer : route.key;
 
@@ -72,6 +73,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
     if (!signedIn) t = `Sign in · ${APP_NAME}`;
     else if (route.name === 'report') t = `${engLabel} · Status · ${APP_NAME}`;
     else if (route.name === 'tech') t = `${engLabel} · Technical · ${APP_NAME}`;
+    else if (route.name === 'tech-schema') t = `${engLabel} · Schema · ${APP_NAME}`;
     document.title = t;
   }, [signedIn, route.name, engLabel]);
 
@@ -81,6 +83,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   let body;
   if (route.name === 'report') body = <Report epicKey={route.key} />;
   else if (route.name === 'tech') body = <TechView epicKey={route.key} />;
+  else if (route.name === 'tech-schema') body = <SchemaView epicKey={route.key} feedKey={route.feed} />;
   else body = <Portfolio />;
 
   const initial = (email || '?').trim().charAt(0).toUpperCase();
@@ -106,7 +109,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
               <div className="gt" title={engLabel}>{engLabel}</div>
               <NavItem icon={<FileText size={17} />} label="Status report" active={route.name === 'report'} onClick={() => navigate(`#/report/${route.key}`)} />
               {eng && eng.internal && (
-                <NavItem icon={<Wrench size={17} />} label="Technical view" active={route.name === 'tech'} onClick={() => navigate(`#/tech/${route.key}`)} />
+                <NavItem icon={<Wrench size={17} />} label="Technical view" active={route.name === 'tech' || route.name === 'tech-schema'} onClick={() => navigate(`#/tech/${route.key}`)} />
               )}
             </div>
           )}
@@ -133,15 +136,20 @@ function Shell({ ready, session, route, email, onSignOut }) {
             {engOpen && (
               <>
                 <ChevronRight size={14} className="sep" />
-                {route.name === 'tech'
-                  ? <button onClick={() => navigate(`#/report/${route.key}`)}>{engLabel}</button>
-                  : <span className="cur" title={engLabel}>{engLabel}</span>}
+                {route.name === 'report'
+                  ? <span className="cur" title={engLabel}>{engLabel}</span>
+                  : <button onClick={() => navigate(`#/report/${route.key}`)}>{engLabel}</button>}
               </>
             )}
             {route.name === 'tech' && (
+              <><ChevronRight size={14} className="sep" /><span className="cur">Technical</span></>
+            )}
+            {route.name === 'tech-schema' && (
               <>
                 <ChevronRight size={14} className="sep" />
-                <span className="cur">Technical</span>
+                <button onClick={() => navigate(`#/tech/${route.key}`)}>Technical</button>
+                <ChevronRight size={14} className="sep" />
+                <span className="cur">Coverage</span>
               </>
             )}
           </nav>
@@ -406,6 +414,42 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-emptystate{background:#fff;border:1px dashed var(--line);border-radius:18px;padding:48px;text-align:center;color:var(--slate);}
 .cdp-emptystate h3{font-family:'Sora';color:var(--ink);margin:0 0 8px;}
 
+/* ---- indicators: status row, insights, charts ---- */
+.cdp-chip-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.cdp-insights{margin:20px 0 6px;}
+.cdp-insight-card{max-width:540px;}
+.cdp-chart-row{display:flex;align-items:center;gap:24px;flex-wrap:wrap;}
+.cdp-chart-center-n{font-family:'Sora',sans-serif;font-weight:700;font-size:18px;fill:var(--ink);}
+.cdp-chart-center-l{font-size:10px;fill:var(--slate);text-transform:uppercase;letter-spacing:.06em;}
+.cdp-legend{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;min-width:160px;}
+.cdp-legend-item{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;padding:4px 6px;border-radius:8px;font:inherit;font-size:13px;color:var(--ink);text-align:left;}
+.cdp-legend-item.clickable{cursor:pointer;} .cdp-legend-item.clickable:hover{background:var(--wash);}
+.cdp-legend-item:disabled{cursor:default;}
+.cdp-legend-item .sw{width:11px;height:11px;border-radius:3px;flex:0 0 auto;}
+.cdp-legend-item .lb{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdp-legend-item .vl{font-family:'Sora',sans-serif;font-weight:700;}
+.cdp-barchart{display:flex;flex-direction:column;gap:7px;}
+.cdp-bar-row{display:grid;grid-template-columns:180px 1fr 84px;align-items:center;gap:12px;padding:2px 4px;border-radius:8px;}
+.cdp-bar-row.clickable{cursor:pointer;} .cdp-bar-row.clickable:hover{background:var(--wash);}
+.cdp-bar-label{font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdp-bar-track{height:14px;background:var(--wash);border-radius:7px;overflow:hidden;}
+.cdp-bar-fill{display:block;height:100%;background:var(--blue);border-radius:7px;min-width:4px;}
+.cdp-bar-val{font-family:'Sora',sans-serif;font-weight:700;font-size:12.5px;text-align:right;color:var(--ink);}
+
+/* ---- schema field coverage ---- */
+.cdp-coverage{display:flex;flex-direction:column;gap:7px;}
+.cdp-cov-row{display:grid;grid-template-columns:1fr 2fr 46px 72px;align-items:center;gap:12px;}
+.cdp-cov-name{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cdp-cov-track{height:12px;background:var(--wash);border-radius:6px;overflow:hidden;}
+.cdp-cov-fill{display:block;height:100%;border-radius:6px;min-width:3px;}
+.cdp-cov-pct{font-family:'Sora',sans-serif;font-weight:700;font-size:12.5px;text-align:right;}
+.cdp-cov-count{font-size:12px;color:var(--slate);text-align:right;}
+
+/* ---- stepper polish ---- */
+.cdp-stepper{box-shadow:var(--sh-1);}
+.cdp-step .num{font-weight:700;}
+.cdp-step.done:not(:last-child)::after{border-left-color:#DCEFE8;}
+
 /* ---- responsive ---- */
 @media(max-width:960px){
   .cdp-sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--sh-3);}
@@ -423,6 +467,10 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
   .cdp-appbar{padding:10px 14px;}
   .cdp-report-hero{padding:20px 18px;}
   .cdp-kpis{gap:10px;}
+  .cdp-bar-row{grid-template-columns:110px 1fr 62px;gap:8px;}
+  .cdp-cov-row{grid-template-columns:1fr 1.4fr 40px;gap:8px;}
+  .cdp-cov-count{display:none;}
+  .cdp-chart-row{gap:14px;}
 }
 @media(prefers-reduced-motion:reduce){
   .cdp-viewport,.cdp-toast{animation:none;}

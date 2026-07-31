@@ -4,7 +4,8 @@ import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { PortfolioSkeleton } from '../components/Skeleton.jsx';
-import { fmtDate, ragToken, cx, donePct, isNotStarted } from '../lib/ui.js';
+import { PieChart } from '../components/charts.jsx';
+import { fmtDate, ragToken, statusToken, cx, donePct, isNotStarted } from '../lib/ui.js';
 
 // Activate a clickable non-button element (card / row) from the keyboard.
 const onActivate = (fn) => (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); fn(); } };
@@ -16,7 +17,7 @@ function stageLabel(e) {
   return e.phase != null ? PHASES[e.phase] : null;
 }
 
-const PHASES = ['Project Kickoff', 'Development', 'Q&A', 'Sample & Approval', 'In Production'];
+const PHASES = ['Project Kickoff', 'Development', 'Quality Assurance (QA)', 'Sample & Approval', 'Production Run'];
 const RAG_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'green', label: 'On track' },
@@ -101,6 +102,12 @@ export default function Portfolio() {
     return m;
   }, [engagements, preds]);
 
+  const pmChartData = useMemo(() => {
+    const m = {};
+    for (const e of engagements) { const k = e.pm || 'Unassigned'; m[k] = (m[k] || 0) + 1; }
+    return Object.entries(m).map(([label, value]) => ({ label, value }));
+  }, [engagements]);
+
   const noFilters = kpi === null && rag === 'all' && pm === 'all' && phase === 'all' && month === 'all' && !q.trim();
   const onKpi = (key) => {
     if (key === 'all') { setKpi(null); setRag('all'); setPm('all'); setPhase('all'); setMonth('all'); setQ(''); return; }
@@ -168,6 +175,15 @@ export default function Portfolio() {
       </section>
 
       <div className="cdp-wrap">
+        {isInternal && pmChartData.length > 0 && (
+          <div className="cdp-insights">
+            <div className="cdp-panel cdp-insight-card">
+              <h4>Engagements by project manager</h4>
+              <PieChart data={pmChartData} title="Engagements by PM"
+                onSlice={(name) => { if (name !== 'Other') setPm(name); }} />
+            </div>
+          </div>
+        )}
         {/* row 1: search · view · sort */}
         <div className="cdp-toolbar">
           <div className="cdp-search">
@@ -227,6 +243,15 @@ export default function Portfolio() {
   );
 }
 
+function StatusPill({ status, category }) {
+  const t = statusToken(category);
+  return (
+    <span className="cdp-statuschip" style={{ color: t.color, background: t.tint }}>
+      <span className="dot" style={{ background: t.color }} />{status || '—'}
+    </span>
+  );
+}
+
 function Kpi({ n, l, alert, active, onClick }) {
   return (
     <button type="button" className={cx('cdp-kpi', alert && 'alert', active && 'active')} onClick={onClick} title={`Filter: ${l}`}>
@@ -269,7 +294,10 @@ function EngagementCard({ e }) {
         <div><h3>{e.customer}</h3><div className="sub">{e.summary}</div></div>
         <span className="cdp-rag"><span className="dot" style={{ background: rt.color }} />{rt.label}</span>
       </div>
-      {stageLabel(e) && <div><span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span></div>}
+      <div className="cdp-chip-row">
+        <StatusPill status={e.status} category={e.statusCategory} />
+        {stageLabel(e) && <span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span>}
+      </div>
       <div className="cdp-meta-row"><span>PM <b>{e.pm || '—'}</b></span><span>Finish <b>{fmtDate(e.plannedFinish)}</b></span></div>
       <div>
         <ProgressBar counts={c} />
@@ -288,6 +316,7 @@ function PortfolioTable({ rows, showPm }) {
         <thead>
           <tr>
             <th>Customer / engagement</th>
+            <th>Status</th>
             <th>Phase</th>
             <th>Health</th>
             {showPm && <th>PM</th>}
@@ -304,6 +333,7 @@ function PortfolioTable({ rows, showPm }) {
                 onClick={() => navigate(`#/report/${e.key}`)}
                 onKeyDown={onActivate(() => navigate(`#/report/${e.key}`))}>
                 <td><div className="cust">{e.customer}</div><div className="eng">{e.summary}</div></td>
+                <td><StatusPill status={e.status} category={e.statusCategory} /></td>
                 <td>{stageLabel(e) ? <span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span> : '—'}</td>
                 <td><span className="cdp-rag"><span className="dot" style={{ background: rt.color }} />{rt.label}</span></td>
                 {showPm && <td style={{ fontSize: 12.5 }}>{e.pm || '—'}</td>}

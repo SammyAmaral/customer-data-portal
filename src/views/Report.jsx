@@ -156,7 +156,10 @@ export default function Report({ epicKey }) {
         ))}
       </div>
 
-      {/* ---- narrative (Overview, Scope, Out of Scope, Project Updates) ---- */}
+      {/* ---- narrative: Project Updates (full width) → Overview / Scope / Out of Scope / Change Requests ---- */}
+      <div className="cdp-report-updates">
+        <ListPanel title="Project Updates" items={data.projectStatus} variant="updates" empty="No updates logged yet." />
+      </div>
       <div className="cdp-report-narrative">
         <div>
           <NarrativePanel title="Overview" text={data.overview} />
@@ -164,7 +167,7 @@ export default function Report({ epicKey }) {
         </div>
         <div>
           <ListPanel title="Out of Scope" items={data.outOfScope} />
-          <ListPanel title="Project Updates" items={data.projectStatus} variant="updates" />
+          <ListPanel title="Change Requests" items={data.changeRequests} empty="No change requests logged." />
         </div>
       </div>
 
@@ -258,13 +261,13 @@ function NarrativePanel({ title, text }) {
   );
 }
 
-function ListPanel({ title, items, variant }) {
+function ListPanel({ title, items, variant, empty }) {
   return (
     <div className="cdp-panel">
       <h4>{title}</h4>
       {items && items.length > 0
         ? <ul className={cx('cdp-list', variant === 'updates' && 'cdp-updates')}>{items.map((it, i) => <li key={i}>{it}</li>)}</ul>
-        : <div className="cdp-empty">Not provided.</div>}
+        : <div className="cdp-empty">{empty || 'Not provided.'}</div>}
     </div>
   );
 }

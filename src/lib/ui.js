@@ -26,6 +26,17 @@ export function ragToken(rag) {
   return RAG[rag] || { label: 'Not set', color: 'var(--slate)' };
 }
 
+// Jira status category (new | indeterminate | done) → chip colours. The label
+// itself is the literal Jira status name, passed alongside.
+export const STATUS_CAT = {
+  new: { color: 'var(--slate)', tint: 'rgba(92,107,132,.12)' },
+  indeterminate: { color: 'var(--rag-amber)', tint: 'rgba(214,138,52,.14)' },
+  done: { color: 'var(--rag-green)', tint: 'rgba(14,156,120,.12)' },
+};
+export function statusToken(category) {
+  return STATUS_CAT[category] || STATUS_CAT.new;
+}
+
 // Feed status bucket → colour + readable label for chips.
 export const FEED = {
   done: { label: 'Delivered', color: 'var(--rag-green)', tint: 'rgba(14,156,120,.12)' },

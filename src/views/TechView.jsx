@@ -9,13 +9,14 @@
    up once the classic job shape is confirmed on a live engagement.
    ========================================================================= */
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, RefreshCw, ExternalLink } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ExternalLink, Search, LayoutGrid, List } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { TechSkeleton } from '../components/Skeleton.jsx';
-import { fmtMoney, feedToken } from '../lib/ui.js';
+import { BarChart } from '../components/charts.jsx';
+import { fmtMoney, feedToken, cx } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
 // Delivery frequency → crawl runs per month (for the monthly-items estimate).
@@ -73,6 +74,8 @@ export default function TechView({ epicKey }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
+  const [q, setQ] = useState('');
+  const [view, setView] = useState('cards');
   const toast = useToast();
   const { setEngagement } = useChrome();
 
@@ -108,6 +111,14 @@ export default function TechView({ epicKey }) {
   const totalRecords = feeds.reduce((s, f) => s + (f.records || 0), 0);
   const activeJobs = feeds.filter((f) => f.jobState === 'running' || f.jobState === 'pending').length;
   const unhealthyJobs = feeds.filter((f) => f.jobState && !f.jobHealthy).length;
+  const needle = q.trim().toLowerCase();
+  const shownFeeds = needle
+    ? feeds.filter((f) => `${f.name} ${f.spiderResolved || f.spiderName || ''}`.toLowerCase().includes(needle))
+    : feeds;
+  const volumeData = feeds
+    .map((f) => ({ label: f.name, value: f.recordsRecent != null ? f.recordsRecent : (f.records || 0), key: f.key }))
+    .filter((d) => d.value > 0)
+    .sort((a, b) => b.value - a.value);
 
   return (
     <div className="cdp-wrap">
@@ -148,16 +159,78 @@ export default function TechView({ epicKey }) {
         </div>
       )}
 
-      {feeds.length > 0 ? (
-        <div className="cdp-techgrid">
-          {feeds.map((f) => <TechCard key={f.key} f={f} />)}
+      {volumeData.length > 1 && (
+        <div className="cdp-panel" style={{ marginTop: 4 }}>
+          <h4>Crawler volume · recent items collected</h4>
+          <BarChart data={volumeData} onBar={(d) => setQ(d.label)} />
         </div>
-      ) : <div className="cdp-emptystate" style={{ marginTop: 24 }}><h3>No feeds</h3><p>This engagement has no crawling components yet.</p></div>}
+      )}
+
+      {feeds.length > 0 && (
+        <div className="cdp-toolbar" style={{ marginBottom: 14 }}>
+          <div className="cdp-search">
+            <Search size={16} style={{ color: 'var(--slate)' }} />
+            <input placeholder="Search crawl name…" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+          <div className="cdp-viewtoggle" role="group" aria-label="View">
+            <button className={cx(view === 'cards' && 'active')} onClick={() => setView('cards')}><LayoutGrid size={14} /> Cards</button>
+            <button className={cx(view === 'list' && 'active')} onClick={() => setView('list')}><List size={14} /> List</button>
+          </div>
+          <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--slate)' }}>{shownFeeds.length} of {feeds.length}</span>
+        </div>
+      )}
+
+      {feeds.length === 0 ? (
+        <div className="cdp-emptystate" style={{ marginTop: 24 }}><h3>No feeds</h3><p>This engagement has no crawling components yet.</p></div>
+      ) : shownFeeds.length === 0 ? (
+        <div className="cdp-emptystate" style={{ marginTop: 24 }}><h3>No matches</h3><p>No crawlers match “{q}”.</p></div>
+      ) : view === 'cards' ? (
+        <div className="cdp-techgrid">
+          {shownFeeds.map((f) => <TechCard key={f.key} f={f} epicKey={data.key} />)}
+        </div>
+      ) : (
+        <TechList feeds={shownFeeds} epicKey={data.key} />
+      )}
     </div>
   );
 }
 
-function TechCard({ f }) {
+function TechList({ feeds, epicKey }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="cdp-table">
+        <thead>
+          <tr>
+            <th>Crawler</th><th>Status</th><th>Items / crawl</th><th>Recent</th><th>Errors</th>
+            <th>Last run</th><th>Source</th><th>Schema</th>
+          </tr>
+        </thead>
+        <tbody>
+          {feeds.map((f) => {
+            const ft = feedToken(f.bucket);
+            return (
+              <tr key={f.key}>
+                <td className="cdp-feedname">{f.name}{f.jobState && (
+                  <span className="cdp-jobdot" title={jobStateLabel(f)} style={{ background: jobColor(f) }} />
+                )}</td>
+                <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
+                  <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
+                <td className="center">{f.records != null ? fmtMoney(f.records) : '—'}</td>
+                <td className="center">{f.recordsRecent != null ? fmtMoney(f.recordsRecent) : '—'}</td>
+                <td className="center" style={{ color: f.jobErrors ? 'var(--rag-red)' : 'inherit', fontWeight: f.jobErrors ? 700 : 400 }}>{f.jobErrors != null ? f.jobErrors : '—'}</td>
+                <td className="center">{f.jobFinished || '—'}</td>
+                <td className="center">{f.jobSource ? <span className="cdp-tag">{f.jobSource === 'prod' ? 'prod' : 'dev'}</span> : '—'}</td>
+                <td className="center">{f.jobKey ? <a href={`#/tech/${epicKey}/schema/${encodeURIComponent(f.key)}`}>coverage ↗</a> : '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TechCard({ f, epicKey }) {
   const ft = feedToken(f.bucket);
   const cfg = f.config || {};
   const perCrawl = f.records != null ? f.records : null;
@@ -213,7 +286,10 @@ function TechCard({ f }) {
 
       <dl className="cdp-cfg">
         <dt>Schema</dt>
-        <dd>{cfg.schema ? <a href={cfg.schema} target="_blank" rel="noreferrer">schema ↗</a> : '—'}</dd>
+        <dd>
+          {cfg.schema ? <a href={cfg.schema} target="_blank" rel="noreferrer">schema ↗</a> : '—'}
+          {f.jobKey && <> · <a href={`#/tech/${epicKey}/schema/${encodeURIComponent(f.key)}`}>coverage</a></>}
+        </dd>
         <dt>Frequency</dt>
         <dd>{cfg.frequency || '—'}</dd>
         <dt>Format</dt>

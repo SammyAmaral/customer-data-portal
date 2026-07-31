@@ -33,6 +33,7 @@ export const CF = {
   scope: 'customfield_13590',
   outOfScope: 'customfield_13591',
   projectStatus: 'customfield_13671',
+  changeRequest: 'customfield_13670',    // "Change Request:" narrative (customer-safe)
   solutionArchitect: 'customfield_13312',
   volumeBand: 'customfield_13586',
   spiderName: 'customfield_14219',        // Scrapy Cloud spider name (naming convention)
@@ -81,7 +82,7 @@ export const EPIC_DETAIL_FIELDS = [
   'summary', 'status', 'assignee', 'duedate', 'description', 'created', 'updated',
   CF.startDate, CF.plannedFinish, CF.ragStatus, CF.effortRag, CF.customer, CF.accountOwner,
   CF.projContactName, CF.projContactEmail, CF.techContactName, CF.techContactEmail,
-  CF.scope, CF.outOfScope, CF.projectStatus, CF.solutionArchitect, CF.slack,
+  CF.scope, CF.outOfScope, CF.projectStatus, CF.changeRequest, CF.solutionArchitect, CF.slack,
   CF.sfOpportunity, CF.sows, CF.satForm, CF.satLink,
   CF.setupFee, CF.mrrValue, CF.mrrPeriods, CF.margin,
   CF.zyteDataOrg, CF.scProdProject, CF.scDevProject,
@@ -226,7 +227,7 @@ export function feedBucket(status) {
   return 'todo';
 }
 
-export const PHASES = ['Project Kickoff', 'Development', 'Q&A', 'Sample & Approval', 'In Production'];
+export const PHASES = ['Project Kickoff', 'Development', 'Quality Assurance (QA)', 'Sample & Approval', 'Production Run'];
 
 // Where a single feed sits on the phase timeline.
 function feedPhaseIndex(status) {
@@ -297,6 +298,7 @@ export function mapEpicListRow(issue, { feedCounts = null, phase = null } = {}) 
     customer: customerName(issue),
     summary: cleanText(f.summary),
     status: f.status ? f.status.name : 'Unknown',
+    statusCategory: (f.status && f.status.statusCategory && f.status.statusCategory.key) || null,
     rag: ragValue(f[CF.ragStatus]) || ragValue(f[CF.effortRag]),
     pm: personName(f.assignee),
     am: personName(f[CF.accountOwner]),
@@ -336,6 +338,7 @@ export function mapEpicDetail(issue, { internal = false } = {}) {
     scope: adfLines(f[CF.scope]),
     outOfScope: adfLines(f[CF.outOfScope]),
     projectStatus: adfLines(f[CF.projectStatus]),
+    changeRequests: adfLines(f[CF.changeRequest]),
   };
 
   // Commercial (customer-safe — reflects the signed SOW). Margin is added
