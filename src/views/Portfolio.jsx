@@ -4,7 +4,7 @@ import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { PortfolioSkeleton } from '../components/Skeleton.jsx';
-import { PieChart, ColumnChart } from '../components/charts.jsx';
+import { PieChart, TimelineChart } from '../components/charts.jsx';
 import { fmtDate, ragToken, statusToken, cx, donePct, isNotStarted } from '../lib/ui.js';
 
 // Activate a clickable non-button element (card / row) from the keyboard.
@@ -126,19 +126,24 @@ export default function Portfolio() {
     ].filter((d) => d.value > 0);
   }, [engagements]);
 
-  const monthData = useMemo(() => {
+  const timelineData = useMemo(() => {
     const nowM = today.slice(0, 7);
     const m = {};
-    for (const e of engagements) { const k = monthKey(e); m[k] = (m[k] || 0) + 1; }
-    return Object.entries(m)
-      .sort(([a], [b]) => (a === 'none' ? 1 : b === 'none' ? -1 : a.localeCompare(b)))
-      .map(([k, value]) => ({
-        key: k,
-        label: monthShort(k),
-        value,
-        color: k === 'none' ? 'var(--slate)' : k < nowM ? 'var(--rag-red)' : k === nowM ? 'var(--rag-amber)' : 'var(--blue)',
+    for (const e of engagements) {
+      const k = monthKey(e);
+      if (!m[k]) m[k] = { key: k, value: 0, customers: [] };
+      m[k].value += 1;
+      m[k].customers.push(e.customer);
+    }
+    return Object.values(m)
+      .sort((a, b) => (a.key === 'none' ? 1 : b.key === 'none' ? -1 : a.key.localeCompare(b.key)))
+      .map((d) => ({
+        ...d,
+        label: monthShort(d.key),
+        color: d.key === 'none' ? 'var(--slate)' : d.key < nowM ? 'var(--rag-red)' : d.key === nowM ? 'var(--rag-amber)' : 'var(--blue)',
       }));
   }, [engagements, today]);
+  const undated = (timelineData.find((d) => d.key === 'none') || {}).value || 0;
 
   const noFilters = kpi === null && rag === 'all' && pm === 'all' && phase === 'all' && month === 'all' && !q.trim();
   const onKpi = (key) => {
@@ -220,8 +225,9 @@ export default function Portfolio() {
                 onSlice={(name) => { if (name !== 'Other') setPm(name); }} />
             </div>
             <div className="cdp-panel cdp-insight-wide">
-              <h4>Finishing by month <span className="cdp-insight-note">· red = past due</span></h4>
-              <ColumnChart data={monthData} onBar={(d) => setMonth(d.key)} />
+              <h4>Finishing timeline <span className="cdp-insight-note">· red past due · amber this month · blue upcoming</span></h4>
+              <TimelineChart data={timelineData} onStop={(d) => setMonth(d.key)} />
+              {undated > 0 && <div className="cdp-note" style={{ marginTop: 8 }}>{undated} engagement{undated > 1 ? 's' : ''} without a finish date.</div>}
             </div>
           </div>
         )}

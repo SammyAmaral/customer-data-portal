@@ -121,6 +121,44 @@ export function ColumnChart({ data, onBar, height = 150 }) {
   );
 }
 
+// data: [{key, label, value, color, state, customers[]}] chronological (caller
+// filters/sorts). Horizontal timeline: a node per month along a line, sized by
+// count, with a few customer names beneath each stop. `none`-key rows skipped.
+export function TimelineChart({ data, onStop }) {
+  const rows = (data || []).filter((d) => d.key !== 'none');
+  if (!rows.length) return <div className="cdp-empty">No dated engagements yet.</div>;
+  const peak = rows.reduce((m, d) => Math.max(m, d.value || 0), 0) || 1;
+  return (
+    <div className="cdp-timeline">
+      <div className="cdp-tl-track" />
+      <div className="cdp-tl-stops">
+        {rows.map((d) => {
+          const size = 28 + Math.round(((d.value || 0) / peak) * 20); // 28..48px
+          const clickable = !!onStop;
+          return (
+            <div key={d.key} className={cx('cdp-tl-stop', clickable && 'clickable')}
+              role={clickable ? 'button' : undefined} tabIndex={clickable ? 0 : undefined}
+              onClick={clickable ? () => onStop(d) : undefined}
+              onKeyDown={clickable ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onStop(d); } } : undefined}
+              title={`${d.label}: ${d.value} finishing${d.customers && d.customers.length ? ' — ' + d.customers.join(', ') : ''}`}>
+              <span className="cdp-tl-nodewrap">
+                <span className="cdp-tl-node" style={{ width: size, height: size, background: d.color }}>{d.value}</span>
+              </span>
+              <span className="cdp-tl-label">{d.label}</span>
+              {d.customers && d.customers.length > 0 && (
+                <span className="cdp-tl-names">
+                  {d.customers.slice(0, 3).map((c) => <span key={c} className="cdp-tl-chip" title={c}>{c}</span>)}
+                  {d.customers.length > 3 && <span className="cdp-tl-more">+{d.customers.length - 3}</span>}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // data: [{label, value, key?}] — caller sorts. Single-hue magnitude bars.
 export function BarChart({ data, onBar, unit = '', max = 20 }) {
   const rows = (data || []).slice(0, max);
