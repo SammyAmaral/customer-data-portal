@@ -145,8 +145,76 @@ function summarize(jobs, project, env) {
   };
 }
 
+// The full Scrapy stats dict for a job (status-code counts, retries, Zyte API
+// request types…) from HubStorage job metadata. Best-effort; null on any miss.
+async function fetchJobStats(jobKey, probe) {
+  if (!jobKey) return null;
+  const resp = await fetch(`${SC_BASE}/jobs/${jobKey}?format=json`, { headers: { Authorization: authHeader(), Accept: 'application/json' } });
+  probe.statCalls = (probe.statCalls || 0) + 1;
+  if (!resp.ok) { probe.status[resp.status] = (probe.status[resp.status] || 0) + 1; return null; }
+  let body;
+  try { body = await resp.json(); } catch { return null; }
+  const stats = (body && (body.scrapystats || body.stats)) || null;
+  if (stats) {
+    // Log the alert-relevant keys once so the exact names can be confirmed live.
+    console.log('[scrapy] statkeys', jobKey, Object.keys(stats)
+      .filter((k) => /status_count|zyte-api|retry|item_scraped|response_count|finish_reason|browserhtml|httpresponsebody/i.test(k))
+      .slice(0, 40).join(','));
+  }
+  return stats;
+}
+
+const BAN_CODES = [403, 429, 503, 407];
+const statNum = (o, k) => Number(o && o[k]) || 0;
+
+// Derive alert chips from a job's summary + Scrapy stats. level: high | warn.
+function computeAlerts(summary, stats) {
+  const alerts = [];
+  const { state, closeReason: cr } = summary;
+
+  if (state === 'finished' && cr && cr !== 'finished') {
+    alerts.push({ level: 'high', code: 'job', label: `job: ${cr}` });
+  } else if (state && state !== 'finished' && state !== 'running' && state !== 'pending') {
+    alerts.push({ level: 'high', code: 'job', label: `job: ${state}` });
+  }
+
+  let responses = null; let blocked = 0; let renderPct = null;
+  if (stats) {
+    responses = statNum(stats, 'downloader/response_count') || statNum(stats, 'response_received_count') || null;
+    blocked = BAN_CODES.reduce((s, c) => s + statNum(stats, `downloader/response_status_count/${c}`), 0);
+    if (blocked > 0) {
+      const pct = responses ? Math.round((blocked / responses) * 100) : null;
+      alerts.push({ level: pct != null && pct >= 5 ? 'high' : 'warn', code: 'ban', label: pct != null ? `${blocked} blocked · ${pct}%` : `${blocked} blocked (403/429)` });
+    }
+    // Browser-render vs raw-request usage (Zyte API request types).
+    let render = statNum(stats, 'scrapy-zyte-api/request_args/browserHtml') + statNum(stats, 'scrapy-zyte-api/request_args/screenshot');
+    let raw = statNum(stats, 'scrapy-zyte-api/request_args/httpResponseBody');
+    if (render + raw === 0) {
+      for (const [k, v] of Object.entries(stats)) {
+        if (/browserhtml|screenshot/i.test(k)) render += Number(v) || 0;
+        else if (/httpresponsebody/i.test(k)) raw += Number(v) || 0;
+      }
+    }
+    const totalReq = render + raw;
+    if (totalReq > 0) {
+      renderPct = Math.round((render / totalReq) * 100);
+      if (renderPct > 20) alerts.push({ level: 'warn', code: 'render', label: `browser render · ${renderPct}%` });
+    }
+  }
+
+  if (state === 'finished' && summary.records === 0 && (responses == null || responses > 0)) {
+    alerts.push({ level: 'high', code: 'items', label: responses ? `0 items · ${responses} responses` : '0 items' });
+  }
+
+  return { alerts, responses, blocked, renderPct };
+}
+
 function apply(feed, s) {
   feed.records = s.records;
+  feed.alerts = s.alerts || [];
+  feed.responses = s.responses != null ? s.responses : null;
+  feed.renderPct = s.renderPct != null ? s.renderPct : null;
+  feed.blocked = s.blocked || 0;
   feed.recordsRecent = s.recordsRecent;
   feed.jobRuns = s.runs;
   feed.jobState = s.state;
@@ -214,6 +282,9 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
         if (jobs && jobs.length) { summary = summarize(jobs, p.id, p.env); break; }
       }
       if (summary) {
+        let stats = null;
+        try { stats = await fetchJobStats(summary.jobKey, probe); } catch { /* stats best-effort */ }
+        Object.assign(summary, computeAlerts(summary, stats));
         apply(f, summary);
         enriched++;
         toCache.push({ key: k, epic_key: epicKey, spider: f.spiderResolved, data: summary, fetched_at: new Date().toISOString() });

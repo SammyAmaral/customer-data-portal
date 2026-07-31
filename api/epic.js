@@ -108,9 +108,9 @@ export default async function handler(req, res) {
     detail.phase = { index: phaseIndex, steps: PHASES };
     detail.sowPricingStatus = sowStatus;
     detail.scrapyStatus = scrapyStatus;
-    // The technical config + crawl diagnostics are internal-only.
+    // The technical config + crawl alerts/diagnostics are internal-only.
     if (scope.internal) detail.scrapyDebug = scrapyDebug;
-    else for (const f of feeds) delete f.config;
+    else for (const f of feeds) { delete f.config; delete f.alerts; delete f.renderPct; delete f.responses; delete f.blocked; }
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     res.status(200).json(detail);

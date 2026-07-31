@@ -76,6 +76,7 @@ export default function TechView({ epicKey }) {
   const [nonce, setNonce] = useState(0);
   const [q, setQ] = useState('');
   const [view, setView] = useState('cards');
+  const [alertsOnly, setAlertsOnly] = useState(false);
   const toast = useToast();
   const { setEngagement } = useChrome();
 
@@ -112,9 +113,14 @@ export default function TechView({ epicKey }) {
   const activeJobs = feeds.filter((f) => f.jobState === 'running' || f.jobState === 'pending').length;
   const unhealthyJobs = feeds.filter((f) => f.jobState && !f.jobHealthy).length;
   const needle = q.trim().toLowerCase();
-  const shownFeeds = needle
-    ? feeds.filter((f) => `${f.name} ${f.spiderResolved || f.spiderName || ''}`.toLowerCase().includes(needle))
-    : feeds;
+  const hasAlerts = (f) => f.alerts && f.alerts.length > 0;
+  const shownFeeds = feeds.filter((f) => {
+    if (needle && !`${f.name} ${f.spiderResolved || f.spiderName || ''}`.toLowerCase().includes(needle)) return false;
+    if (alertsOnly && !hasAlerts(f)) return false;
+    return true;
+  });
+  const feedsWithAlerts = feeds.filter(hasAlerts).length;
+  const totalAlerts = feeds.reduce((n, f) => n + (f.alerts ? f.alerts.length : 0), 0);
   const volumeData = feeds
     .map((f) => ({ label: f.name, value: f.recordsRecent != null ? f.recordsRecent : (f.records || 0), key: f.key }))
     .filter((d) => d.value > 0)
@@ -133,7 +139,7 @@ export default function TechView({ epicKey }) {
             <div className="cust">Engineering view · {data.key} · {feeds.length} feed{feeds.length === 1 ? '' : 's'}
               {totalRecords > 0 ? ` · ${fmtMoney(totalRecords)} records collected` : ''}
               {activeJobs > 0 ? ` · ${activeJobs} crawling now` : ''}
-              {unhealthyJobs > 0 ? ` · ⚠ ${unhealthyJobs} unhealthy` : ''}
+              {totalAlerts > 0 ? ` · ⚠ ${totalAlerts} alert${totalAlerts > 1 ? 's' : ''} on ${feedsWithAlerts} feed${feedsWithAlerts > 1 ? 's' : ''}` : (unhealthyJobs > 0 ? ` · ⚠ ${unhealthyJobs} unhealthy` : '')}
             </div>
           </div>
         </div>
@@ -176,6 +182,9 @@ export default function TechView({ epicKey }) {
             <button className={cx(view === 'cards' && 'active')} onClick={() => setView('cards')}><LayoutGrid size={14} /> Cards</button>
             <button className={cx(view === 'list' && 'active')} onClick={() => setView('list')}><List size={14} /> List</button>
           </div>
+          {feedsWithAlerts > 0 && (
+            <button className={cx('cdp-chip', alertsOnly && 'active')} onClick={() => setAlertsOnly((v) => !v)}>⚠ Alerts ({feedsWithAlerts})</button>
+          )}
           <span style={{ marginLeft: 'auto', fontSize: 12.5, color: 'var(--slate)' }}>{shownFeeds.length} of {feeds.length}</span>
         </div>
       )}
@@ -201,7 +210,7 @@ function TechList({ feeds, epicKey }) {
       <table className="cdp-table">
         <thead>
           <tr>
-            <th>Crawler</th><th>Status</th><th>Items / crawl</th><th>Recent</th><th>Errors</th>
+            <th>Crawler</th><th>Status</th><th>Alerts</th><th>Items / crawl</th><th>Recent</th><th>Errors</th>
             <th>Last run</th><th>Source</th><th>Schema</th>
           </tr>
         </thead>
@@ -215,6 +224,11 @@ function TechList({ feeds, epicKey }) {
                 )}</td>
                 <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
                   <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
+                <td>{f.alerts && f.alerts.length ? (
+                  <div className="cdp-alerts" style={{ margin: 0 }}>
+                    {f.alerts.map((a, i) => <span key={i} className={cx('cdp-alert', a.level)} title={a.code}>{a.label}</span>)}
+                  </div>
+                ) : <span style={{ color: 'var(--rag-green)' }}>OK</span>}</td>
                 <td className="center">{f.records != null ? fmtMoney(f.records) : '—'}</td>
                 <td className="center">{f.recordsRecent != null ? fmtMoney(f.recordsRecent) : '—'}</td>
                 <td className="center" style={{ color: f.jobErrors ? 'var(--rag-red)' : 'inherit', fontWeight: f.jobErrors ? 700 : 400 }}>{f.jobErrors != null ? f.jobErrors : '—'}</td>
@@ -256,6 +270,12 @@ function TechCard({ f, epicKey }) {
         {'  '}· {jobStateLabel(f)}
         {f.jobSource && <span className="cdp-tag" title="Which Scrapy Cloud project the jobs came from">{f.jobSource === 'prod' ? 'production' : 'development'}</span>}
       </div>
+
+      {f.alerts && f.alerts.length > 0 && (
+        <div className="cdp-alerts">
+          {f.alerts.map((a, i) => <span key={i} className={cx('cdp-alert', a.level)} title={a.code}>{a.label}</span>)}
+        </div>
+      )}
 
       <div className="cdp-metrics">
         <div className="cdp-metric">

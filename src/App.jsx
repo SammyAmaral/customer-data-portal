@@ -357,6 +357,10 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-cfg{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px;margin:0;}
 .cdp-cfg dt{color:var(--slate);white-space:nowrap;} .cdp-cfg dd{margin:0;font-weight:600;text-align:right;}
 .cdp-tag{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--navy);background:var(--blue-tint);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle;}
+.cdp-alerts{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;}
+.cdp-alert{font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;white-space:nowrap;}
+.cdp-alert.high{color:#fff;background:var(--rag-red);}
+.cdp-alert.warn{color:#7A531A;background:#FFF1D6;border:1px solid #F3D9A6;}
 .cdp-panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px;}
 .cdp-panel h4{font-family:'Sora';font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
 .cdp-panel + .cdp-panel{margin-top:16px;}
