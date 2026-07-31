@@ -4,7 +4,7 @@ import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { PortfolioSkeleton } from '../components/Skeleton.jsx';
-import { PieChart } from '../components/charts.jsx';
+import { PieChart, ColumnChart } from '../components/charts.jsx';
 import { fmtDate, ragToken, statusToken, cx, donePct, isNotStarted } from '../lib/ui.js';
 
 // Activate a clickable non-button element (card / row) from the keyboard.
@@ -44,6 +44,13 @@ const monthLabel = (k) => {
   return isNaN(d) ? k : d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
 };
 const ragRank = (rag) => ({ red: 0, amber: 1, green: 2 }[rag] ?? 3);
+const monthShort = (k) => {
+  if (k === 'none') return 'No date';
+  const d = new Date(`${k}-01T00:00:00`);
+  return isNaN(d) ? k : `${d.toLocaleDateString('en-GB', { month: 'short' })} '${k.slice(2, 4)}`;
+};
+// Health donut slice label → RAG filter key (for click-to-filter).
+const RAG_BY_LABEL = { 'On track': 'green', 'At risk': 'amber', 'Off track': 'red', 'Not set': 'grey' };
 
 export default function Portfolio() {
   const [data, setData] = useState(null);
@@ -107,6 +114,31 @@ export default function Portfolio() {
     for (const e of engagements) { const k = e.pm || 'Unassigned'; m[k] = (m[k] || 0) + 1; }
     return Object.entries(m).map(([label, value]) => ({ label, value }));
   }, [engagements]);
+
+  const healthData = useMemo(() => {
+    const m = { green: 0, amber: 0, red: 0, grey: 0 };
+    for (const e of engagements) { const k = e.rag || 'grey'; m[k] = (m[k] || 0) + 1; }
+    return [
+      { label: 'On track', value: m.green, color: 'var(--rag-green)' },
+      { label: 'At risk', value: m.amber, color: 'var(--rag-amber)' },
+      { label: 'Off track', value: m.red, color: 'var(--rag-red)' },
+      { label: 'Not set', value: m.grey, color: 'var(--slate)' },
+    ].filter((d) => d.value > 0);
+  }, [engagements]);
+
+  const monthData = useMemo(() => {
+    const nowM = today.slice(0, 7);
+    const m = {};
+    for (const e of engagements) { const k = monthKey(e); m[k] = (m[k] || 0) + 1; }
+    return Object.entries(m)
+      .sort(([a], [b]) => (a === 'none' ? 1 : b === 'none' ? -1 : a.localeCompare(b)))
+      .map(([k, value]) => ({
+        key: k,
+        label: monthShort(k),
+        value,
+        color: k === 'none' ? 'var(--slate)' : k < nowM ? 'var(--rag-red)' : k === nowM ? 'var(--rag-amber)' : 'var(--blue)',
+      }));
+  }, [engagements, today]);
 
   const noFilters = kpi === null && rag === 'all' && pm === 'all' && phase === 'all' && month === 'all' && !q.trim();
   const onKpi = (key) => {
@@ -175,12 +207,21 @@ export default function Portfolio() {
       </section>
 
       <div className="cdp-wrap">
-        {isInternal && pmChartData.length > 0 && (
+        {isInternal && engagements.length > 0 && (
           <div className="cdp-insights">
-            <div className="cdp-panel cdp-insight-card">
+            <div className="cdp-panel">
+              <h4>Portfolio health</h4>
+              <PieChart data={healthData} title="Portfolio health"
+                onSlice={(label) => { const r = RAG_BY_LABEL[label]; if (r) setRag(r); }} />
+            </div>
+            <div className="cdp-panel">
               <h4>Engagements by project manager</h4>
               <PieChart data={pmChartData} title="Engagements by PM"
                 onSlice={(name) => { if (name !== 'Other') setPm(name); }} />
+            </div>
+            <div className="cdp-panel cdp-insight-wide">
+              <h4>Finishing by month <span className="cdp-insight-note">· red = past due</span></h4>
+              <ColumnChart data={monthData} onBar={(d) => setMonth(d.key)} />
             </div>
           </div>
         )}

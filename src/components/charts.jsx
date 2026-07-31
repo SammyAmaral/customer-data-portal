@@ -41,7 +41,9 @@ export function PieChart({ data, size = 172, max = 6, onSlice, title = 'Distribu
 
   const head = clean.slice(0, max);
   const tail = clean.slice(max);
-  const slices = head.map((d, i) => ({ ...d, color: CAT[i % CAT.length] }));
+  // A datum may pin its own colour (e.g. RAG status greens/ambers/reds);
+  // otherwise fall back to the categorical order.
+  const slices = head.map((d, i) => ({ ...d, color: d.color || CAT[i % CAT.length] }));
   if (tail.length) slices.push({ label: 'Other', value: tail.reduce((s, d) => s + d.value, 0), color: OTHER, tail });
 
   const R = size / 2;
@@ -88,6 +90,33 @@ export function PieChart({ data, size = 172, max = 6, onSlice, title = 'Distribu
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// data: [{label, value, key?, color?}] — caller sorts chronologically. Vertical
+// columns for time-bucketed counts (e.g. engagements finishing per month).
+export function ColumnChart({ data, onBar, height = 150 }) {
+  const rows = data || [];
+  const peak = rows.reduce((m, d) => Math.max(m, d.value || 0), 0) || 1;
+  if (!rows.length) return <div className="cdp-empty">No dated engagements yet.</div>;
+  return (
+    <div className="cdp-columns" style={{ height }}>
+      {rows.map((d) => {
+        const h = Math.max(4, Math.round(((d.value || 0) / peak) * 100));
+        const clickable = !!onBar;
+        return (
+          <div key={d.key || d.label} className={cx('cdp-col', clickable && 'clickable')}
+            role={clickable ? 'button' : undefined} tabIndex={clickable ? 0 : undefined}
+            onClick={clickable ? () => onBar(d) : undefined}
+            onKeyDown={clickable ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onBar(d); } } : undefined}
+            title={`${d.label}: ${d.value}`}>
+            <span className="cdp-col-val">{d.value}</span>
+            <span className="cdp-col-track"><span className="cdp-col-fill" style={{ height: `${h}%`, background: d.color || 'var(--blue)' }} /></span>
+            <span className="cdp-col-label" title={d.label}>{d.label}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }
