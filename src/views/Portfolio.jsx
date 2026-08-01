@@ -30,11 +30,12 @@ const SORTS = [
   { key: 'customer', label: 'Customer A–Z' },
   { key: 'delivered', label: '% delivered (high→low)' },
   { key: 'health', label: 'Health (worst first)' },
+  { key: 'alerts', label: 'Most crawler alerts' },
 ];
 
 const KPI_LABELS = {
   notStarted: 'Not started', inProgress: 'In progress', awaiting: 'Awaiting feedback',
-  inProduction: 'In production', overdue: 'Overdue', atRisk: 'At risk',
+  inProduction: 'In production', overdue: 'Overdue', atRisk: 'At risk', alerts: 'Crawler alerts',
 };
 
 const monthKey = (e) => (e.plannedFinish ? e.plannedFinish.slice(0, 7) : 'none');
@@ -63,6 +64,7 @@ export default function Portfolio() {
   const [sort, setSort] = useState('updated');
   const [view, setView] = useState('cards');
   const [kpi, setKpi] = useState(null); // active KPI filter key, or null
+  const [alertsMap, setAlertsMap] = useState({}); // per-engagement crawler-alert rollup
   const { setEngagement } = useChrome();
 
   // On the portfolio there's no open engagement — reset the breadcrumb.
@@ -80,6 +82,16 @@ export default function Portfolio() {
     return () => { alive = false; };
   }, []);
 
+  // Crawler-alert rollup (internal-only; empty for customers) — layered on
+  // after the main load so the portfolio itself stays fast.
+  useEffect(() => {
+    let alive = true;
+    fetchWithAuth('/api/alerts')
+      .then((d) => { if (alive && d && d.byEpic) setAlertsMap(d.byEpic); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const engagements = data ? data.engagements : [];
 
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
@@ -90,10 +102,11 @@ export default function Portfolio() {
     inProduction: (e) => e.phase === 4,
     overdue: (e) => e.plannedFinish && e.plannedFinish < today && e.phase !== 4,
     atRisk: (e) => e.rag === 'amber' || e.rag === 'red',
-  }), [today]);
+    alerts: (e) => { const r = alertsMap[e.key]; return !!(r && (r.high > 0 || r.alertFeeds > 0)); },
+  }), [today, alertsMap]);
 
   const metrics = useMemo(() => {
-    const m = { total: engagements.length, notStarted: 0, inProgress: 0, awaiting: 0, inProduction: 0, overdue: 0, atRisk: 0, feedsDone: 0, feedsTotal: 0 };
+    const m = { total: engagements.length, notStarted: 0, inProgress: 0, awaiting: 0, inProduction: 0, overdue: 0, atRisk: 0, alertEng: 0, feedsDone: 0, feedsTotal: 0 };
     for (const e of engagements) {
       if (preds.notStarted(e)) m.notStarted++;
       if (preds.inProgress(e)) m.inProgress++;
@@ -101,6 +114,7 @@ export default function Portfolio() {
       if (preds.inProduction(e)) m.inProduction++;
       if (preds.overdue(e)) m.overdue++;
       if (preds.atRisk(e)) m.atRisk++;
+      if (preds.alerts(e)) m.alertEng++;
       const fc = e.feedCounts || {};
       m.feedsDone += fc.done || 0;
       m.feedsTotal += fc.total || 0;
@@ -171,15 +185,17 @@ export default function Portfolio() {
       if (needle && !`${e.customer} ${e.summary}`.toLowerCase().includes(needle)) return false;
       return true;
     });
+    const aScore = (e) => { const r = alertsMap[e.key]; return r ? r.high * 100 + (r.warn || 0) : -1; };
     const cmp = {
       updated: (a, b) => (b.updated || '').localeCompare(a.updated || ''),
       finish: (a, b) => (a.plannedFinish || '9999').localeCompare(b.plannedFinish || '9999'),
       customer: (a, b) => a.customer.localeCompare(b.customer),
       delivered: (a, b) => donePct(b.feedCounts) - donePct(a.feedCounts),
       health: (a, b) => ragRank(a.rag) - ragRank(b.rag),
+      alerts: (a, b) => aScore(b) - aScore(a),
     }[sort];
     return [...filtered].sort(cmp);
-  }, [engagements, q, rag, pm, phase, month, sort, kpi, preds]);
+  }, [engagements, q, rag, pm, phase, month, sort, kpi, preds, alertsMap]);
 
   if (error && error.status === 403) {
     return <div className="cdp-wrap"><div className="cdp-emptystate" style={{ marginTop: 40 }}>
@@ -213,6 +229,7 @@ export default function Portfolio() {
             <Kpi n={metrics.inProduction} l="In production" active={kpi === 'inProduction'} onClick={() => onKpi('inProduction')} />
             <Kpi n={metrics.overdue} l="Overdue" alert={metrics.overdue > 0} active={kpi === 'overdue'} onClick={() => onKpi('overdue')} />
             <Kpi n={metrics.atRisk} l="At risk" alert={metrics.atRisk > 0} active={kpi === 'atRisk'} onClick={() => onKpi('atRisk')} />
+            {isInternal && <Kpi n={metrics.alertEng} l="Crawler alerts" alert={metrics.alertEng > 0} active={kpi === 'alerts'} onClick={() => onKpi('alerts')} />}
             <KpiPct pct={metrics.completion} />
           </div>
         </div>
@@ -288,9 +305,9 @@ export default function Portfolio() {
             <p>{engagements.length === 0 ? 'No engagements are shared with your account yet.' : 'No engagements match your filters.'}</p>
           </div>
         ) : view === 'cards' ? (
-          <div className="cdp-grid">{shown.map((e) => <EngagementCard key={e.key} e={e} />)}</div>
+          <div className="cdp-grid">{shown.map((e) => <EngagementCard key={e.key} e={e} rollup={alertsMap[e.key]} />)}</div>
         ) : (
-          <PortfolioTable rows={shown} showPm={isInternal} />
+          <PortfolioTable rows={shown} showPm={isInternal} alerts={alertsMap} />
         )}
       </div>
     </div>
@@ -302,6 +319,20 @@ function StatusPill({ status, category }) {
   return (
     <span className="cdp-statuschip" style={{ color: t.color, background: t.tint }}>
       <span className="dot" style={{ background: t.color }} />{status || '—'}
+    </span>
+  );
+}
+
+// Consolidated crawler-alert badge for the portfolio (rolled up from the
+// engineer view). Null when an engagement has no alerts / hasn't been checked.
+function AlertBadge({ rollup }) {
+  if (!rollup) return null;
+  const n = (rollup.high || 0) + (rollup.warn || 0);
+  if (!n) return null;
+  return (
+    <span className={cx('cdp-alert', rollup.high > 0 ? 'high' : 'warn')}
+      title={`${rollup.high || 0} critical · ${rollup.warn || 0} warning on ${rollup.alertFeeds} feed${rollup.alertFeeds > 1 ? 's' : ''}`}>
+      ⚠ {n}
     </span>
   );
 }
@@ -337,7 +368,7 @@ function ProgressBar({ counts }) {
   );
 }
 
-function EngagementCard({ e }) {
+function EngagementCard({ e, rollup }) {
   const rt = ragToken(e.rag);
   const c = e.feedCounts || { total: 0, done: 0, blocked: 0 };
   return (
@@ -351,6 +382,7 @@ function EngagementCard({ e }) {
       <div className="cdp-chip-row">
         <StatusPill status={e.status} category={e.statusCategory} />
         {stageLabel(e) && <span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span>}
+        <AlertBadge rollup={rollup} />
       </div>
       <div className="cdp-meta-row"><span>PM <b>{e.pm || '—'}</b></span><span>Finish <b>{fmtDate(e.plannedFinish)}</b></span></div>
       <div>
@@ -363,7 +395,7 @@ function EngagementCard({ e }) {
   );
 }
 
-function PortfolioTable({ rows, showPm }) {
+function PortfolioTable({ rows, showPm, alerts }) {
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="cdp-ptable">
@@ -387,7 +419,7 @@ function PortfolioTable({ rows, showPm }) {
                 onClick={() => navigate(`#/report/${e.key}`)}
                 onKeyDown={onActivate(() => navigate(`#/report/${e.key}`))}>
                 <td><div className="cust">{e.customer}</div><div className="eng">{e.summary}</div></td>
-                <td><StatusPill status={e.status} category={e.statusCategory} /></td>
+                <td><div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><StatusPill status={e.status} category={e.statusCategory} /><AlertBadge rollup={alerts && alerts[e.key]} /></div></td>
                 <td>{stageLabel(e) ? <span className={cx('cdp-phasechip', isNotStarted(e.status) && 'muted')}>{stageLabel(e)}</span> : '—'}</td>
                 <td><span className="cdp-rag"><span className="dot" style={{ background: rt.color }} />{rt.label}</span></td>
                 {showPm && <td style={{ fontSize: 12.5 }}>{e.pm || '—'}</td>}
