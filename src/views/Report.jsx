@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { fmtDate, fmtMoney, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
@@ -8,12 +8,23 @@ import { useToast } from '../lib/toast.jsx';
 import { ReportSkeleton } from '../components/Skeleton.jsx';
 import AccessDenied from './AccessDenied.jsx';
 
-export default function Report({ epicKey }) {
+export default function Report({ epicKey, email }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
+  const [panelFeed, setPanelFeed] = useState(null);   // feed shown in the side panel
+  const [panelOpen, setPanelOpen] = useState(false);
   const toast = useToast();
   const { setEngagement } = useChrome();
+
+  const openFeed = (f) => { setPanelFeed(f); setPanelOpen(true); };
+  const closePanel = useCallback(() => { setPanelOpen(false); setTimeout(() => setPanelFeed(null), 250); }, []);
+  useEffect(() => {
+    if (!panelOpen) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') closePanel(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [panelOpen, closePanel]);
 
   useEffect(() => {
     let alive = true;
@@ -181,7 +192,7 @@ export default function Report({ epicKey }) {
                   <tr>
                     <th>Feed</th><th>Status</th><th>Volume band</th><th>Records</th><th>Subscription</th>
                     <th>Start date</th><th>1st sample sent</th><th>Sample approved</th><th>Due date</th>
-                    <th>Days open</th>
+                    <th>Days open</th><th>Comments</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -204,6 +215,11 @@ export default function Report({ epicKey }) {
                         <td className="center">{f.sampleApproved ? fmtDate(f.sampleApproved) : '—'}</td>
                         <td className="center">{f.dueDate ? fmtDate(f.dueDate) : '—'}</td>
                         <td className="center">{f.daysOpen != null ? f.daysOpen : '—'}</td>
+                        <td className="center">
+                          <button className="cdp-iconbtn" onClick={() => openFeed(f)} aria-label={`Comments for ${f.name}`} title="Comments & sample approval">
+                            <MessageSquare size={15} />
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -217,6 +233,112 @@ export default function Report({ epicKey }) {
             </div>
           )}
       </div>
+
+      {/* ---- feed comments / sample-approval side panel (mockup) ---- */}
+      {panelOpen && <div className="cdp-panel-backdrop" onClick={closePanel} />}
+      <aside className={cx('cdp-sidepanel', panelOpen && 'open')} aria-hidden={!panelOpen}>
+        {panelFeed && <FeedPanel key={panelFeed.key} feed={panelFeed} email={email} onClose={closePanel} />}
+      </aside>
+    </div>
+  );
+}
+
+function readJson(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } }
+function writeJson(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } }
+
+function FeedPanel({ feed, email, onClose }) {
+  const toast = useToast();
+  const [remote, setRemote] = useState(null); // { comments } | null (loading)
+  const [failed, setFailed] = useState(false);
+  const storeKey = `cdp_cmt_${feed.key}`;
+  const apprKey = `cdp_appr_${feed.key}`;
+  const [local, setLocal] = useState(() => readJson(storeKey, []));
+  const [approval, setApproval] = useState(() => readJson(apprKey, null));
+  const [draft, setDraft] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    setRemote(null); setFailed(false);
+    fetchWithAuth(`/api/comments?feed=${encodeURIComponent(feed.key)}`)
+      .then((d) => alive && setRemote(d))
+      .catch(() => alive && setFailed(true));
+    return () => { alive = false; };
+  }, [feed.key]);
+
+  const who = email || 'You';
+  const addComment = () => {
+    const text = draft.trim();
+    if (!text) return;
+    const next = [...local, { author: who, when: new Date().toISOString(), lines: text.split('\n').filter(Boolean), preview: true }];
+    setLocal(next); writeJson(storeKey, next); setDraft('');
+    toast.success('Comment added (preview)');
+  };
+  const approve = () => {
+    const a = { by: who, when: new Date().toISOString() };
+    setApproval(a); writeJson(apprKey, a);
+    toast.success('Sample marked approved (preview)');
+  };
+  const undoApprove = () => { setApproval(null); writeJson(apprKey, null); };
+
+  const remoteComments = (remote && remote.comments) || [];
+  const empty = !failed && remote && remoteComments.length === 0 && local.length === 0;
+
+  return (
+    <div className="cdp-fp">
+      <div className="cdp-fp-head">
+        <div>
+          <div className="cdp-eyebrow" style={{ color: 'var(--slate)' }}>Feed</div>
+          <h3>{feed.name}</h3>
+        </div>
+        <button className="cdp-fp-x" onClick={onClose} aria-label="Close"><X size={18} /></button>
+      </div>
+
+      <div className="cdp-fp-preview">Comments &amp; approval are a <b>preview</b> — kept in your browser, not saved to Jira yet.</div>
+
+      <div className="cdp-fp-sample">
+        <div className="cdp-fp-sample-row"><span>1st sample sent</span><b>{fmtDate(feed.firstSampleSent)}</b></div>
+        <div className="cdp-fp-sample-row"><span>Sample approved</span><b>{feed.sampleApproved ? fmtDate(feed.sampleApproved) : (approval ? 'Approved (preview)' : '—')}</b></div>
+        {feed.sampleApproved ? (
+          <div className="cdp-fp-approved"><Check size={14} /> Approved in Jira · {fmtDate(feed.sampleApproved)}</div>
+        ) : approval ? (
+          <div className="cdp-fp-approved"><Check size={14} /> Approved by {approval.by} · {fmtDate(approval.when)} <button className="cdp-linkbtn" onClick={undoApprove}>undo</button></div>
+        ) : (
+          <button className="cdp-btn cdp-btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={approve}><Check size={15} /> Approve sample</button>
+        )}
+      </div>
+
+      <div className="cdp-fp-comments">
+        <h4>Comments</h4>
+        {failed ? <div className="cdp-empty">Couldn’t load comments from Jira.</div>
+          : !remote ? <div className="cdp-empty">Loading…</div>
+          : empty ? <div className="cdp-empty">No comments yet.</div>
+          : (
+            <div className="cdp-cmt-list">
+              {remoteComments.map((c) => <Comment key={c.id} c={c} />)}
+              {local.map((c, i) => <Comment key={`l${i}`} c={c} />)}
+            </div>
+          )}
+      </div>
+
+      <div className="cdp-fp-composer">
+        <textarea placeholder="Add a comment about this feed…" value={draft} rows={3} onChange={(e) => setDraft(e.target.value)} />
+        <button className="cdp-btn cdp-btn-primary" style={{ justifyContent: 'center' }} onClick={addComment} disabled={!draft.trim()}>
+          <Send size={15} /> Add comment
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Comment({ c }) {
+  const lines = c.lines && c.lines.length ? c.lines : ['—'];
+  return (
+    <div className="cdp-cmt">
+      <div className="cdp-cmt-top">
+        <span className="cdp-cmt-author">{c.author}{c.preview && <span className="cdp-tag">preview</span>}</span>
+        <span className="cdp-cmt-when">{fmtDate(c.when)}</span>
+      </div>
+      {lines.map((l, i) => <p key={i} className="cdp-cmt-body">{l}</p>)}
     </div>
   );
 }
