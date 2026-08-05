@@ -292,7 +292,7 @@ function FeedPanel({ feed, email, onClose }) {
   const undoApprove = () => { setApproval(null); writeJson(apprKey, null); };
 
   const remoteComments = (remote && remote.comments) || [];
-  const empty = !failed && remote && remoteComments.length === 0 && local.length === 0;
+  const hasAny = remoteComments.length + local.length > 0;
 
   return (
     <div className="cdp-fp">
@@ -331,15 +331,14 @@ function FeedPanel({ feed, email, onClose }) {
 
       <div className="cdp-fp-comments">
         <h4>Comments</h4>
-        {failed ? <div className="cdp-empty">Couldn’t load comments from Jira.</div>
-          : !remote ? <div className="cdp-empty">Loading…</div>
-          : empty ? <div className="cdp-empty">No comments yet.</div>
-          : (
-            <div className="cdp-cmt-list">
-              {remoteComments.map((c) => <Comment key={c.id} c={c} />)}
-              {local.map((c, i) => <Comment key={`l${i}`} c={c} />)}
-            </div>
-          )}
+        {!remote && !failed && <div className="cdp-empty">Loading Jira comments…</div>}
+        {failed && <div className="cdp-note" style={{ color: 'var(--rag-amber)', margin: '0 0 10px' }}>Couldn’t load existing Jira comments.</div>}
+        {hasAny ? (
+          <div className="cdp-cmt-list">
+            {remoteComments.map((c) => <Comment key={c.id} c={c} />)}
+            {local.map((c, i) => <Comment key={`l${i}`} c={c} />)}
+          </div>
+        ) : (remote || failed) ? <div className="cdp-empty">No comments yet.</div> : null}
       </div>
 
       <div className="cdp-fp-composer">
