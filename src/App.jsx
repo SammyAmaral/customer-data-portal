@@ -378,6 +378,10 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-fp-sample-row{display:flex;justify-content:space-between;font-size:13px;color:var(--slate);}
 .cdp-fp-sample-row b{color:var(--ink);}
 .cdp-fp-approved{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;color:var(--rag-green);}
+.cdp-fp-accept,.cdp-fp-accepted{display:flex;flex-direction:column;gap:10px;}
+.cdp-fp-note{margin:0;font-size:12px;line-height:1.5;color:#5C6B84;background:var(--wash);border:1px solid var(--line);border-radius:9px;padding:9px 11px;}
+.cdp-fp-accept-actions{display:flex;gap:8px;}
+.cdp-fp-accept-actions .cdp-btn{flex:1;justify-content:center;}
 .cdp-linkbtn{background:none;border:0;color:var(--blue);cursor:pointer;font:inherit;font-size:12px;text-decoration:underline;padding:0;margin-left:4px;}
 .cdp-fp-comments{padding:16px 20px 0;flex:1;}
 .cdp-fp-comments h4{font-family:'Sora',sans-serif;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin:0 0 12px;}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
@@ -234,14 +235,23 @@ export default function Report({ epicKey, email }) {
           )}
       </div>
 
-      {/* ---- feed comments / sample-approval side panel (mockup) ---- */}
-      {panelOpen && <div className="cdp-panel-backdrop" onClick={closePanel} />}
-      <aside className={cx('cdp-sidepanel', panelOpen && 'open')} aria-hidden={!panelOpen}>
-        {panelFeed && <FeedPanel key={panelFeed.key} feed={panelFeed} email={email} onClose={closePanel} />}
-      </aside>
+      {/* ---- feed comments / sample-approval side panel (mockup) ----
+           Portaled to .cdp-root so position:fixed is relative to the viewport
+           (not the transform-animated .cdp-viewport), so it follows page scroll. */}
+      {createPortal(
+        <>
+          {panelOpen && <div className="cdp-panel-backdrop" onClick={closePanel} />}
+          <aside className={cx('cdp-sidepanel', panelOpen && 'open')} aria-hidden={!panelOpen}>
+            {panelFeed && <FeedPanel key={panelFeed.key} feed={panelFeed} email={email} onClose={closePanel} />}
+          </aside>
+        </>,
+        (typeof document !== 'undefined' && document.querySelector('.cdp-root')) || document.body,
+      )}
     </div>
   );
 }
+
+const ACCEPTANCE_NOTE = 'By approving this sample you confirm it meets your requirements. This authorises Zyte to complete the crawler and move it to production — starting the recurring delivery and the subscription for this feed.';
 
 function readJson(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch { return fb; } }
 function writeJson(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } }
@@ -255,6 +265,7 @@ function FeedPanel({ feed, email, onClose }) {
   const [local, setLocal] = useState(() => readJson(storeKey, []));
   const [approval, setApproval] = useState(() => readJson(apprKey, null));
   const [draft, setDraft] = useState('');
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -301,9 +312,20 @@ function FeedPanel({ feed, email, onClose }) {
         {feed.sampleApproved ? (
           <div className="cdp-fp-approved"><Check size={14} /> Approved in Jira · {fmtDate(feed.sampleApproved)}</div>
         ) : approval ? (
-          <div className="cdp-fp-approved"><Check size={14} /> Approved by {approval.by} · {fmtDate(approval.when)} <button className="cdp-linkbtn" onClick={undoApprove}>undo</button></div>
+          <div className="cdp-fp-accepted">
+            <div className="cdp-fp-approved"><Check size={14} /> Approved by {approval.by} · {fmtDate(approval.when)} <button className="cdp-linkbtn" onClick={undoApprove}>undo</button></div>
+            <p className="cdp-fp-note">{ACCEPTANCE_NOTE}</p>
+          </div>
+        ) : confirming ? (
+          <div className="cdp-fp-accept">
+            <p className="cdp-fp-note">{ACCEPTANCE_NOTE}</p>
+            <div className="cdp-fp-accept-actions">
+              <button className="cdp-btn cdp-btn-ghost" onClick={() => setConfirming(false)}>Cancel</button>
+              <button className="cdp-btn cdp-btn-primary" onClick={() => { approve(); setConfirming(false); }}><Check size={15} /> I accept — approve</button>
+            </div>
+          </div>
         ) : (
-          <button className="cdp-btn cdp-btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={approve}><Check size={15} /> Approve sample</button>
+          <button className="cdp-btn cdp-btn-primary" style={{ width: '100%', justifyContent: 'center' }} onClick={() => setConfirming(true)}><Check size={15} /> Approve sample</button>
         )}
       </div>
 
