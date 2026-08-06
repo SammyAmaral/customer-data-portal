@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck } from 'lucide-react';
 import { fetchWithAuth, postWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
-import { fmtDate, fmtMoney, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
+import { fmtDate, fmtMoney, ragToken, statusToken, cx, isNotStarted } from '../lib/ui.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { ReportSkeleton } from '../components/Skeleton.jsx';
@@ -91,6 +91,7 @@ export default function Report({ epicKey, email }) {
           <button className="cdp-btn cdp-btn-ghost" onClick={() => { setNonce((n) => n + 1); toast.info('Refreshing…'); }}><RefreshCw size={15} /> Refresh</button>
           <button className="cdp-btn cdp-btn-ghost" onClick={copyLink}><Link2 size={15} /> Copy share link</button>
           <button className="cdp-btn cdp-btn-ghost" onClick={() => window.print()}><Printer size={15} /> Export PDF</button>
+          <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/qa/${data.key}`)}><ShieldCheck size={15} /> QA report</button>
           {data.internal && (
             <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/tech/${data.key}`)}><Wrench size={15} /> Technical view</button>
           )}
@@ -196,19 +197,19 @@ export default function Report({ epicKey, email }) {
                   <tr>
                     <th>Feed</th><th>Status</th><th>Volume band</th><th>Records</th><th>Subscription</th>
                     <th>Start date</th><th>1st sample sent</th><th>Sample approved</th><th>Due date</th>
-                    <th>Days open</th><th>Comments</th>
+                    <th>Days open</th><th>Schema · Notes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.feeds.map((f) => {
-                    const ft = feedToken(f.bucket);
+                    const st = statusToken(f.statusCategory);
                     return (
                       <tr key={f.key}>
                         <td className="cdp-feedname">{f.name}{f.jobState && (
                           <span className="cdp-jobdot" title={jobTitle(f)} style={{ background: jobColor(f) }} />
                         )}</td>
-                        <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
-                          <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
+                        <td><span className="cdp-statuschip" style={{ color: st.color, background: st.tint }} title={`Jira status: ${f.status}`}>
+                          <span className="dot" style={{ background: st.color }} />{f.status}</span></td>
                         <td className="center">{f.volumeBand ? <span className="cdp-band">{f.volumeBand}</span> : '—'}</td>
                         <td className="center">{f.records != null ? fmtMoney(f.records) : '—'}</td>
                         <td className="center">{f.subscriptionPrice != null
@@ -220,9 +221,14 @@ export default function Report({ epicKey, email }) {
                         <td className="center">{f.dueDate ? fmtDate(f.dueDate) : '—'}</td>
                         <td className="center">{f.daysOpen != null ? f.daysOpen : '—'}</td>
                         <td className="center">
-                          <button className="cdp-iconbtn" onClick={() => openFeed(f)} aria-label={`Comments for ${f.name}`} title="Comments & sample approval">
-                            <MessageSquare size={15} />
-                          </button>
+                          <div className="cdp-rowactions">
+                            <a className="cdp-iconbtn" href={`#/schema/${data.key}/${encodeURIComponent(f.key)}`} aria-label={`Data schema for ${f.name}`} title="View data schema">
+                              <Braces size={15} />
+                            </a>
+                            <button className="cdp-iconbtn" onClick={() => openFeed(f)} aria-label={`Comments for ${f.name}`} title="Comments & sample approval">
+                              <MessageSquare size={15} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );

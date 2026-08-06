@@ -6,9 +6,9 @@
    link cannot leak another customer's report, because the check is here on the
    server, not in the browser.
 
-   Feed "1st Sample Sent" / "Sample Approved" dates are derived from each
-   crawling-component's status-change history (the dedicated date custom-fields
-   are empty on DOD), so we pull each feed's changelog.
+   Feed "1st Sample Sent" / "Sample Approved" dates come from the real Jira date
+   fields (cf_13588 / cf_13589); we still pull each feed's status-change history
+   as a fallback for older feeds where those fields were never filled in.
    ========================================================================= */
 import { getUserScope, requireJira, fetchIssue, fetchIssues } from './_access.js';
 import {

@@ -39,6 +39,8 @@ export const CF = {
   spiderName: 'customfield_14219',        // Scrapy Cloud spider name (naming convention)
   jobLinkFull: 'customfield_14250',       // "Job Link(s)" — full-crawl app.zyte.com/p/{proj}/{spider}/{job}
   jobLinkSample: 'customfield_14251',     // "Sampling Job Link(s)"
+  firstSampleSentDate: 'customfield_13588', // "1st Sample Sent" — real Jira date field (preferred over changelog)
+  sampleApprovedDate: 'customfield_13589',  // "Sample Approved" — real Jira date field (preferred over changelog)
   // --- Epic-level Scrapy Cloud linkage (drives the Technical View) ---
   zyteDataOrg: 'customfield_13556',       // "Zyte Data Org" — app.zyte.com/o/{org}
   scProdProject: 'customfield_14254',     // "Scrapycloud Production Project" — app.zyte.com/p/{id}
@@ -92,7 +94,7 @@ export const CHILD_FIELDS = ['summary', 'status', 'issuetype', 'created', 'resol
 // Extra per-feed fields for the Data Feed Status table (start/due/volume band).
 export const FEED_FIELDS = [
   ...CHILD_FIELDS, CF.startDate, 'duedate', CF.volumeBand, CF.subscriptionPrice,
-  CF.spiderName, CF.jobLinkFull, CF.jobLinkSample,
+  CF.spiderName, CF.jobLinkFull, CF.jobLinkSample, CF.firstSampleSentDate, CF.sampleApprovedDate,
   CF.feedSchema, CF.deliveryFrequency, CF.deliveryFormat, CF.dataType, CF.region,
   CF.crawlerType, CF.antibot, CF.antibotComplexity, CF.extractionComplexity,
   CF.crawlingComplexity, CF.maintenanceComplexity, CF.requestRatio, CF.postProcessing,
@@ -144,6 +146,14 @@ export function num(v) {
   if (v == null || v === '') return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+// A Jira date / datetime field → 'YYYY-MM-DD' or null (dates come back as
+// "2026-07-31"; datetimes as "2026-07-31T09:12:00.000+0000" — keep the day).
+export function dateOnly(v) {
+  if (!v) return null;
+  const m = String(v).match(/^\d{4}-\d{2}-\d{2}/);
+  return m ? m[0] : null;
 }
 
 // Pull the first URL out of a field that may be a plain string or ADF with a link mark.
@@ -384,7 +394,13 @@ export function mapEpicDetail(issue, { internal = false } = {}) {
 export function mapFeed(issue, histories, asOf) {
   const f = issue.fields || {};
   const status = f.status ? f.status.name : 'Unknown';
-  const { firstSampleSent, sampleApproved } = sampleDatesFromChangelog(histories);
+  const statusCategory = (f.status && f.status.statusCategory && f.status.statusCategory.key) || null;
+  // Prefer the real Jira date fields ("1st Sample Sent" / "Sample Approved"); the
+  // DOD workflow sets these directly and rarely passes through a "Done" status,
+  // so the changelog derivation is only a fallback for older feeds.
+  const cl = sampleDatesFromChangelog(histories);
+  const firstSampleSent = dateOnly(f[CF.firstSampleSentDate]) || cl.firstSampleSent;
+  const sampleApproved = dateOnly(f[CF.sampleApprovedDate]) || cl.sampleApproved;
   const created = f.created || null;
   const end = sampleApproved || f.resolutiondate || asOf;
   // Scrapy Cloud linkage: project id comes from a job link, spider from the name field.
@@ -394,6 +410,7 @@ export function mapFeed(issue, histories, asOf) {
     key: issue.key,
     name: stripPrefix(f.summary) || issue.key,
     status,
+    statusCategory,
     bucket: feedBucket(status),
     startDate: f[CF.startDate] || null,
     firstSampleSent,

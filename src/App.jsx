@@ -9,6 +9,8 @@ import Portfolio from './views/Portfolio.jsx';
 import Report from './views/Report.jsx';
 import TechView from './views/TechView.jsx';
 import SchemaView from './views/SchemaView.jsx';
+import SchemaDoc from './views/SchemaDoc.jsx';
+import QAReport from './views/QAReport.jsx';
 import ChangeRequest from './views/ChangeRequest.jsx';
 
 export const RETURN_KEY = 'cdp_return';
@@ -55,7 +57,8 @@ function Shell({ ready, session, route, email, onSignOut }) {
   const [navOpen, setNavOpen] = useState(false);
 
   const signedIn = isConfigured && session;
-  const engOpen = route.name === 'report' || route.name === 'tech' || route.name === 'tech-schema' || route.name === 'change';
+  const engOpen = route.name === 'report' || route.name === 'tech' || route.name === 'tech-schema'
+    || route.name === 'change' || route.name === 'schema-doc' || route.name === 'qa';
   const eng = engagement && engagement.key === route.key ? engagement : null;
   const engLabel = eng ? eng.customer : route.key;
 
@@ -75,6 +78,8 @@ function Shell({ ready, session, route, email, onSignOut }) {
     else if (route.name === 'report') t = `${engLabel} · Status · ${APP_NAME}`;
     else if (route.name === 'tech') t = `${engLabel} · Technical · ${APP_NAME}`;
     else if (route.name === 'tech-schema') t = `${engLabel} · Schema · ${APP_NAME}`;
+    else if (route.name === 'schema-doc') t = `${engLabel} · Data schema · ${APP_NAME}`;
+    else if (route.name === 'qa') t = `${engLabel} · QA report · ${APP_NAME}`;
     else if (route.name === 'change') t = `${engLabel} · Change order · ${APP_NAME}`;
     document.title = t;
   }, [signedIn, route.name, engLabel]);
@@ -86,6 +91,8 @@ function Shell({ ready, session, route, email, onSignOut }) {
   if (route.name === 'report') body = <Report epicKey={route.key} email={email} />;
   else if (route.name === 'tech') body = <TechView epicKey={route.key} />;
   else if (route.name === 'tech-schema') body = <SchemaView epicKey={route.key} feedKey={route.feed} />;
+  else if (route.name === 'schema-doc') body = <SchemaDoc epicKey={route.key} feedKey={route.feed} />;
+  else if (route.name === 'qa') body = <QAReport epicKey={route.key} />;
   else if (route.name === 'change') body = <ChangeRequest epicKey={route.key} email={email} />;
   else body = <Portfolio />;
 
@@ -154,6 +161,12 @@ function Shell({ ready, session, route, email, onSignOut }) {
                 <ChevronRight size={14} className="sep" />
                 <span className="cur">Coverage</span>
               </>
+            )}
+            {route.name === 'schema-doc' && (
+              <><ChevronRight size={14} className="sep" /><span className="cur">Data schema</span></>
+            )}
+            {route.name === 'qa' && (
+              <><ChevronRight size={14} className="sep" /><span className="cur">QA report</span></>
             )}
             {route.name === 'change' && (
               <><ChevronRight size={14} className="sep" /><span className="cur">Change order</span></>
@@ -424,7 +437,7 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-table tbody td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
 .cdp-table tbody tr:hover{background:var(--wash);}
 .cdp-table td.center{text-align:center;} .cdp-feedname{font-weight:600;color:var(--ink);}
-.cdp-statuschip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;}
+.cdp-statuschip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap;}
 .cdp-statuschip .dot{width:8px;height:8px;border-radius:50%;}
 
 /* ---- skeletons ---- */
@@ -521,6 +534,49 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-cov-pct{font-family:'Sora',sans-serif;font-weight:700;font-size:12.5px;text-align:right;}
 .cdp-cov-count{font-size:12px;color:var(--slate);text-align:right;}
 
+/* ---- feed row actions (schema + comments) ---- */
+.cdp-rowactions{display:inline-flex;gap:6px;justify-content:center;}
+.cdp-iconbtn:hover{text-decoration:none;}
+
+/* ---- schema doc (customer-safe rendered schema) ---- */
+.cdp-schematable{width:100%;border-collapse:collapse;font-size:13px;}
+.cdp-schematable thead th{text-align:left;font-family:'Sora';font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--slate);padding:9px 12px;border-bottom:1px solid var(--line);background:var(--wash);}
+.cdp-schematable thead th.center{text-align:center;}
+.cdp-schematable tbody td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
+.cdp-schematable tbody td.center{text-align:center;}
+.cdp-schematable tbody tr:last-child td{border-bottom:0;}
+.cdp-type{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--navy);background:var(--blue-tint);border-radius:5px;padding:1px 7px;white-space:nowrap;}
+.cdp-req{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--grad-red);background:rgba(242,48,57,.10);border-radius:5px;padding:1px 6px;}
+
+/* ---- QA validation report ---- */
+.cdp-qa-verdict{display:flex;gap:16px;align-items:stretch;background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px;}
+.cdp-qa-score{flex:0 0 auto;width:118px;border-radius:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:14px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+.cdp-qa-score.pass{background:linear-gradient(135deg,#0E9C78,#0b7f62);}
+.cdp-qa-score.warn{background:linear-gradient(135deg,#D68A34,#b5702a);}
+.cdp-qa-score.fail{background:linear-gradient(135deg,#C4432F,#9e3626);}
+.cdp-qa-score .n{font-family:'Sora';font-weight:800;font-size:40px;line-height:1;}
+.cdp-qa-score .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-top:6px;opacity:.92;}
+.cdp-qa-verdict-body{flex:1;display:flex;flex-direction:column;justify-content:center;gap:12px;}
+.cdp-qa-tally{display:flex;flex-wrap:wrap;gap:8px 22px;font-size:13px;color:var(--slate);}
+.cdp-qa-tally b{font-family:'Sora';font-weight:700;font-size:15px;color:var(--ink);margin-right:4px;}
+.cdp-qagrade{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;text-transform:capitalize;white-space:nowrap;}
+.cdp-qagrade.pass{color:var(--rag-green);background:rgba(14,156,120,.12);}
+.cdp-qagrade.warn{color:#7A531A;background:#FFF1D6;}
+.cdp-qagrade.fail{color:var(--rag-red);background:rgba(196,67,47,.12);}
+.cdp-qa-rules{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
+.cdp-qa-rule{border:1px solid var(--line);border-left:3px solid var(--line);border-radius:12px;padding:12px 14px;}
+.cdp-qa-rule.pass{border-left-color:var(--rag-green);} .cdp-qa-rule.warn{border-left-color:var(--rag-amber);} .cdp-qa-rule.fail{border-left-color:var(--rag-red);}
+.cdp-qa-rule .top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;}
+.cdp-qa-rule .metric{font-family:'Sora';font-weight:700;font-size:12px;color:var(--ink);}
+.cdp-qa-rule .name{font-weight:700;font-size:13.5px;color:var(--ink);margin-bottom:3px;}
+.cdp-qa-rule .desc{font-size:12px;color:var(--slate);line-height:1.45;}
+.cdp-qa-split{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;}
+.cdp-qa-anoms{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px;}
+.cdp-qa-anoms li{display:flex;align-items:flex-start;gap:9px;font-size:13px;line-height:1.45;color:#33415A;}
+.cdp-qa-anoms li.fail svg{color:var(--rag-red);flex:0 0 auto;margin-top:1px;}
+.cdp-qa-anoms li.warn svg{color:var(--rag-amber);flex:0 0 auto;margin-top:1px;}
+.cdp-qa-clean{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;color:var(--rag-green);}
+
 /* ---- stepper polish ---- */
 .cdp-stepper{box-shadow:var(--sh-1);}
 .cdp-step .num{font-weight:700;}
@@ -534,7 +590,7 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 }
 @media(min-width:961px){ .cdp-backdrop{display:none;} }
 @media(max-width:860px){
-  .cdp-metacards,.cdp-report-body,.cdp-report-narrative,.cdp-insights{grid-template-columns:1fr;}
+  .cdp-metacards,.cdp-report-body,.cdp-report-narrative,.cdp-insights,.cdp-qa-split{grid-template-columns:1fr;}
   .cdp-stepper{flex-wrap:wrap;}
 }
 @media(max-width:600px){

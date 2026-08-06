@@ -12,6 +12,10 @@ export function parseHash() {
   if (m) return { name: 'report', key: m[1].toUpperCase() };
   const cr = h.match(/^\/change\/([A-Za-z][A-Za-z0-9]+-\d+)/);
   if (cr) return { name: 'change', key: cr[1].toUpperCase() };
+  const sd = h.match(/^\/schema\/([A-Za-z][A-Za-z0-9]+-\d+)\/([A-Za-z][A-Za-z0-9]+-\d+)/);
+  if (sd) return { name: 'schema-doc', key: sd[1].toUpperCase(), feed: sd[2].toUpperCase() };
+  const qa = h.match(/^\/qa\/([A-Za-z][A-Za-z0-9]+-\d+)/);
+  if (qa) return { name: 'qa', key: qa[1].toUpperCase() };
   return { name: 'portfolio' };
 }
 

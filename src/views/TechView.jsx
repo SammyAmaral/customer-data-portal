@@ -9,14 +9,14 @@
    up once the classic job shape is confirmed on a live engagement.
    ========================================================================= */
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, RefreshCw, ExternalLink, Search, LayoutGrid, List } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ExternalLink, Search, LayoutGrid, List, ClipboardCheck } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { TechSkeleton } from '../components/Skeleton.jsx';
 import { BarChart } from '../components/charts.jsx';
-import { fmtMoney, feedToken, cx } from '../lib/ui.js';
+import { fmtMoney, statusToken, cx } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
 // Delivery frequency → crawl runs per month (for the monthly-items estimate).
@@ -145,6 +145,7 @@ export default function TechView({ epicKey }) {
         </div>
         <div className="cdp-actions">
           <button className="cdp-btn cdp-btn-ghost" onClick={() => { setNonce((n) => n + 1); toast.info('Refreshing…'); }}><RefreshCw size={15} /> Refresh</button>
+          <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/qa/${data.key}`)}><ClipboardCheck size={15} /> QA report</button>
           {sc.orgUrl && <a className="cdp-btn cdp-btn-ghost" href={sc.orgUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Data org</a>}
           {sc.prodUrl && <a className="cdp-btn cdp-btn-ghost" href={sc.prodUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Prod project</a>}
           {sc.devUrl && <a className="cdp-btn cdp-btn-ghost" href={sc.devUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Dev project</a>}
@@ -216,14 +217,14 @@ function TechList({ feeds, epicKey }) {
         </thead>
         <tbody>
           {feeds.map((f) => {
-            const ft = feedToken(f.bucket);
+            const st = statusToken(f.statusCategory);
             return (
               <tr key={f.key}>
                 <td className="cdp-feedname">{f.name}{f.jobState && (
                   <span className="cdp-jobdot" title={jobStateLabel(f)} style={{ background: jobColor(f) }} />
                 )}</td>
-                <td><span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
-                  <span className="dot" style={{ background: ft.color }} />{ft.label}</span></td>
+                <td><span className="cdp-statuschip" style={{ color: st.color, background: st.tint }} title={`Jira status: ${f.status}`}>
+                  <span className="dot" style={{ background: st.color }} />{f.status}</span></td>
                 <td>{f.alerts && f.alerts.length ? (
                   <div className="cdp-alerts" style={{ margin: 0 }}>
                     {f.alerts.map((a, i) => <span key={i} className={cx('cdp-alert', a.level)} title={a.code}>{a.label}</span>)}
@@ -245,7 +246,7 @@ function TechList({ feeds, epicKey }) {
 }
 
 function TechCard({ f, epicKey }) {
-  const ft = feedToken(f.bucket);
+  const st = statusToken(f.statusCategory);
   const cfg = f.config || {};
   const perCrawl = f.records != null ? f.records : null;
   const rpm = runsPerMonth(cfg.frequency);
@@ -264,8 +265,8 @@ function TechCard({ f, epicKey }) {
         {f.jobState && <span className="cdp-jobdot" title={jobStateLabel(f)} style={{ background: jobColor(f) }} />}
       </h3>
       <div className="sub">
-        <span className="cdp-statuschip" style={{ color: ft.color, background: ft.tint }}>
-          <span className="dot" style={{ background: ft.color }} />{ft.label}
+        <span className="cdp-statuschip" style={{ color: st.color, background: st.tint }} title={`Jira status: ${f.status}`}>
+          <span className="dot" style={{ background: st.color }} />{f.status}
         </span>
         {'  '}· {jobStateLabel(f)}
         {f.jobSource && <span className="cdp-tag" title="Which Scrapy Cloud project the jobs came from">{f.jobSource === 'prod' ? 'production' : 'development'}</span>}
