@@ -9,10 +9,15 @@ import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
+import { cx } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
 const TYPES = ['Schema change', 'New site / feed', 'Volume change', 'Delivery / frequency', 'Pause / cancel', 'Other'];
 const URGENCY = ['Standard', 'High', 'Urgent'];
+// Internal progression of a change order. Advances as the request evolves; will
+// be driven by the linked Jira Change Order ticket once wired (until then it
+// reads an optional `data.changeOrderStage` index, defaulting to stage 0).
+const CHANGE_STAGES = ['Request submitted', 'Analysis', 'Commercials', 'Approval'];
 
 export default function ChangeRequest({ epicKey, email }) {
   const [data, setData] = useState(null);
@@ -45,6 +50,8 @@ export default function ChangeRequest({ epicKey, email }) {
   }
   if (!data) return <div className="cdp-center"><div className="cdp-spinner" /></div>;
 
+  const stage = Number.isInteger(data.changeOrderStage) ? data.changeOrderStage : 0;
+
   const submit = (e) => {
     e.preventDefault();
     toast.info('Preview only — change-request submission isn’t wired up yet.');
@@ -61,6 +68,16 @@ export default function ChangeRequest({ epicKey, email }) {
           <div className="cust">Request a change to {data.name} · {data.key}</div>
         </div></div>
       </section>
+
+      {/* ---- change-order stage timeline (progresses as the request evolves) ---- */}
+      <div className="cdp-stepper" aria-label="Change order progress">
+        {CHANGE_STAGES.map((label, i) => (
+          <div key={label} className={cx('cdp-step', i < stage && 'done', i === stage && 'current')}>
+            <span className="num">{i < stage ? '✓' : i + 1}</span>
+            <span>{label}</span>
+          </div>
+        ))}
+      </div>
 
       <div className="cdp-note" style={{ margin: '14px 0 0' }}>
         This is a <b>preview</b> of the change-request form — submitting isn’t connected yet. We’ll wire it to raise a Change Order in Jira next.
