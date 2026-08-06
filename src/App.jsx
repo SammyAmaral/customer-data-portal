@@ -9,6 +9,7 @@ import Portfolio from './views/Portfolio.jsx';
 import Report from './views/Report.jsx';
 import TechView from './views/TechView.jsx';
 import SchemaView from './views/SchemaView.jsx';
+import ChangeRequest from './views/ChangeRequest.jsx';
 
 export const RETURN_KEY = 'cdp_return';
 const APP_NAME = 'Customer Data Portal';
@@ -54,7 +55,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   const [navOpen, setNavOpen] = useState(false);
 
   const signedIn = isConfigured && session;
-  const engOpen = route.name === 'report' || route.name === 'tech' || route.name === 'tech-schema';
+  const engOpen = route.name === 'report' || route.name === 'tech' || route.name === 'tech-schema' || route.name === 'change';
   const eng = engagement && engagement.key === route.key ? engagement : null;
   const engLabel = eng ? eng.customer : route.key;
 
@@ -74,6 +75,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
     else if (route.name === 'report') t = `${engLabel} · Status · ${APP_NAME}`;
     else if (route.name === 'tech') t = `${engLabel} · Technical · ${APP_NAME}`;
     else if (route.name === 'tech-schema') t = `${engLabel} · Schema · ${APP_NAME}`;
+    else if (route.name === 'change') t = `${engLabel} · Change order · ${APP_NAME}`;
     document.title = t;
   }, [signedIn, route.name, engLabel]);
 
@@ -84,6 +86,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   if (route.name === 'report') body = <Report epicKey={route.key} email={email} />;
   else if (route.name === 'tech') body = <TechView epicKey={route.key} />;
   else if (route.name === 'tech-schema') body = <SchemaView epicKey={route.key} feedKey={route.feed} />;
+  else if (route.name === 'change') body = <ChangeRequest epicKey={route.key} email={email} />;
   else body = <Portfolio />;
 
   const initial = (email || '?').trim().charAt(0).toUpperCase();
@@ -151,6 +154,9 @@ function Shell({ ready, session, route, email, onSignOut }) {
                 <ChevronRight size={14} className="sep" />
                 <span className="cur">Coverage</span>
               </>
+            )}
+            {route.name === 'change' && (
+              <><ChevronRight size={14} className="sep" /><span className="cur">Change order</span></>
             )}
           </nav>
         </header>
@@ -393,6 +399,15 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-fp-composer{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:12px 20px 18px;display:flex;flex-direction:column;gap:9px;margin-top:16px;}
 .cdp-fp-composer textarea{width:100%;border:1px solid var(--line);border-radius:11px;padding:10px 12px;font-family:'Inter',sans-serif;font-size:13.5px;resize:vertical;outline:0;}
 .cdp-fp-composer textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,111,237,.12);}
+/* ---- notifications card + change-request form ---- */
+.cdp-notify-levels{display:flex;flex-wrap:wrap;gap:8px;}
+.cdp-notify-to{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:14px;font-size:12.5px;}
+.cdp-notify-to .lbl{color:var(--slate);font-weight:600;}
+.cdp-crform{display:grid;grid-template-columns:1fr 1fr;gap:12px 14px;margin-top:6px;}
+.cdp-crform label{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--slate);}
+.cdp-crform label.wide{grid-column:1 / -1;}
+.cdp-crinput{border:1px solid var(--line);border-radius:10px;padding:9px 12px;font-family:'Inter',sans-serif;font-size:13.5px;color:var(--ink);outline:0;resize:vertical;}
+.cdp-crinput:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,111,237,.12);}
 .cdp-panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 20px;}
 .cdp-panel h4{font-family:'Sora';font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--navy);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
 .cdp-panel + .cdp-panel{margin-top:16px;}

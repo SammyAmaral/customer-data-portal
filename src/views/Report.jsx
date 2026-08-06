@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send } from 'lucide-react';
-import { fetchWithAuth } from '../lib/auth.js';
+import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText } from 'lucide-react';
+import { fetchWithAuth, postWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { fmtDate, fmtMoney, ragToken, feedToken, cx, isNotStarted } from '../lib/ui.js';
 import { useChrome } from '../lib/chrome.jsx';
@@ -97,6 +97,7 @@ export default function Report({ epicKey, email }) {
           {data.internal && data.webUrl && (
             <a className="cdp-btn cdp-btn-ghost" href={data.webUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Open in Jira</a>
           )}
+          <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/change/${data.key}`)}><FileText size={15} /> Change Order</button>
         </div>
       </section>
 
@@ -156,6 +157,8 @@ export default function Report({ epicKey, email }) {
             )}
           </div>
         )}
+
+        {data.internal && <NotificationsCard epicKey={data.key} contacts={data.contacts} />}
       </div>
 
       {/* ---- phase stepper ---- */}
@@ -284,12 +287,17 @@ function FeedPanel({ feed, email, onClose }) {
     setLocal(next); writeJson(storeKey, next); setDraft('');
     toast.success('Comment added (preview)');
   };
-  const approve = () => {
+  const approve = async () => {
     const a = { by: who, when: new Date().toISOString() };
     setApproval(a); writeJson(apprKey, a);
-    toast.success('Sample marked approved (preview)');
+    try {
+      await postWithAuth('/api/approve', { feed: feed.key });
+      toast.success('Sample approved — recorded in Jira');
+      fetchWithAuth(`/api/comments?feed=${encodeURIComponent(feed.key)}`).then((d) => setRemote(d)).catch(() => {});
+    } catch (e) {
+      toast.error((e && e.message) || 'Couldn’t record the approval in Jira');
+    }
   };
-  const undoApprove = () => { setApproval(null); writeJson(apprKey, null); };
 
   const remoteComments = (remote && remote.comments) || [];
   const hasAny = remoteComments.length + local.length > 0;
@@ -304,16 +312,16 @@ function FeedPanel({ feed, email, onClose }) {
         <button className="cdp-fp-x" onClick={onClose} aria-label="Close"><X size={18} /></button>
       </div>
 
-      <div className="cdp-fp-preview">Comments &amp; approval are a <b>preview</b> — kept in your browser, not saved to Jira yet.</div>
+      <div className="cdp-fp-preview">Adding a comment here is a <b>preview</b> (not saved yet). Approving the sample <b>posts a comment to Jira</b>.</div>
 
       <div className="cdp-fp-sample">
         <div className="cdp-fp-sample-row"><span>1st sample sent</span><b>{fmtDate(feed.firstSampleSent)}</b></div>
-        <div className="cdp-fp-sample-row"><span>Sample approved</span><b>{feed.sampleApproved ? fmtDate(feed.sampleApproved) : (approval ? 'Approved (preview)' : '—')}</b></div>
+        <div className="cdp-fp-sample-row"><span>Sample approved</span><b>{feed.sampleApproved ? fmtDate(feed.sampleApproved) : (approval ? 'Approved' : '—')}</b></div>
         {feed.sampleApproved ? (
           <div className="cdp-fp-approved"><Check size={14} /> Approved in Jira · {fmtDate(feed.sampleApproved)}</div>
         ) : approval ? (
           <div className="cdp-fp-accepted">
-            <div className="cdp-fp-approved"><Check size={14} /> Approved by {approval.by} · {fmtDate(approval.when)} <button className="cdp-linkbtn" onClick={undoApprove}>undo</button></div>
+            <div className="cdp-fp-approved"><Check size={14} /> Approved by {approval.by} · {fmtDate(approval.when)} — posted to Jira</div>
             <p className="cdp-fp-note">{ACCEPTANCE_NOTE}</p>
           </div>
         ) : confirming ? (
@@ -360,6 +368,60 @@ function Comment({ c }) {
         <span className="cdp-cmt-when">{fmtDate(c.when)}</span>
       </div>
       {lines.map((l, i) => <p key={i} className="cdp-cmt-body">{l}</p>)}
+    </div>
+  );
+}
+
+const NOTIFY_LEVELS = [
+  { key: 'none', label: 'None' },
+  { key: 'feedback', label: 'Feedback requests' },
+  { key: 'comments_feedback', label: 'Comments + feedback' },
+  { key: 'digest', label: 'Daily digest' },
+];
+
+function NotificationsCard({ epicKey, contacts }) {
+  const toast = useToast();
+  const recipients = (contacts || []).map((c) => c.email).filter(Boolean);
+  const [level, setLevel] = useState('none');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchWithAuth(`/api/notify-prefs?key=${encodeURIComponent(epicKey)}`)
+      .then((d) => { if (alive && d) setLevel(d.level || 'none'); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [epicKey]);
+
+  const save = async (lvl) => {
+    const prev = level;
+    setLevel(lvl); setSaving(true);
+    try {
+      await postWithAuth('/api/notify-prefs', { key: epicKey, level: lvl, recipients });
+      toast.success('Notification settings saved');
+    } catch (e) {
+      setLevel(prev);
+      toast.error((e && e.message) || 'Couldn’t save settings');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="cdp-metacard">
+      <h4>Notifications <span className="cdp-tag">internal</span></h4>
+      <div style={{ fontSize: 12.5, color: 'var(--slate)', margin: '-4px 0 12px' }}>
+        Email the customer contacts when a feed moves to feedback or gets a comment. (Sending isn’t wired up yet — this saves the preference.)
+      </div>
+      <div className="cdp-notify-levels">
+        {NOTIFY_LEVELS.map((l) => (
+          <button key={l.key} type="button" className={cx('cdp-chip', level === l.key && 'active')} onClick={() => save(l.key)} disabled={saving}>{l.label}</button>
+        ))}
+      </div>
+      <div className="cdp-notify-to">
+        <span className="lbl">Recipients</span>
+        {recipients.length
+          ? recipients.map((r) => <span key={r} className="cdp-band">{r}</span>)
+          : <span className="cdp-empty">No contact emails on this engagement.</span>}
+      </div>
     </div>
   );
 }

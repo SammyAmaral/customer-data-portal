@@ -83,6 +83,22 @@ export async function fetchIssue(key, { fields, expand } = {}) {
   return jiraFetch(`/rest/api/3/issue/${encodeURIComponent(key)}${suffix}`);
 }
 
+// Add a plain-text comment to an issue (ADF paragraph). Returns the created
+// comment. The only Jira WRITE the portal performs.
+export async function jiraComment(key, text) {
+  const body = {
+    body: {
+      type: 'doc',
+      version: 1,
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: String(text || '') }] }],
+    },
+  };
+  return jiraFetch(`/rest/api/3/issue/${encodeURIComponent(key)}/comment`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 /* ---- Access scope from the caller's Supabase session -------------------- */
 // Returns one of:
 //   { ok:true, email, internal:true,  epicKeys:null }   → sees everything

@@ -72,6 +72,39 @@ create table if not exists scrapy_jobs (
 alter table scrapy_jobs enable row level security;
 -- (No policies — service-role only.)
 
+-- =========================================================================
+-- notify_prefs — per-engagement customer-notification settings (admin, see
+-- api/notify-prefs.js). `level` = none | feedback | comments_feedback | digest.
+-- `recipients` = jsonb array of emails (defaults to the epic's project +
+-- technical contacts). Service-role only.
+-- =========================================================================
+create table if not exists notify_prefs (
+  epic_key    text primary key,
+  level       text not null default 'none',
+  recipients  jsonb,
+  updated_at  timestamptz not null default now()
+);
+alter table notify_prefs enable row level security;
+-- (No policies — service-role only.)
+
+-- =========================================================================
+-- notify_log — record of emails the notifier WOULD send (sending is stubbed
+-- for now, see api/jira-webhook.js). Also an audit trail once sending is live.
+-- Service-role only.
+-- =========================================================================
+create table if not exists notify_log (
+  id          bigint generated always as identity primary key,
+  epic_key    text,
+  feed_key    text,
+  kind        text,           -- feedback | comment
+  to_emails   jsonb,
+  subject     text,
+  status      text,           -- stub | sent | error
+  created_at  timestamptz not null default now()
+);
+alter table notify_log enable row level security;
+-- (No policies — service-role only.)
+
 -- -------------------------------------------------------------------------
 -- Example seed (uncomment + edit). Keep emails lower-case.
 -- -------------------------------------------------------------------------

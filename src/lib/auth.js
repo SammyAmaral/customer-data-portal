@@ -80,3 +80,24 @@ export async function fetchWithAuth(path) {
   }
   return json;
 }
+
+// POST JSON to an authed API route with the current access token attached.
+export async function postWithAuth(path, body) {
+  if (!isConfigured) { const e = new Error('Auth is not configured.'); e.status = 501; throw e; }
+  const { data } = await supabase.auth.getSession();
+  const token = data.session && data.session.access_token;
+  const resp = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body || {}),
+  });
+  let json = {};
+  try { json = await resp.json(); } catch { /* non-JSON error body */ }
+  if (!resp.ok) {
+    const err = new Error(json.error || `Request failed (${resp.status}).`);
+    err.status = resp.status;
+    err.detail = json.detail;
+    throw err;
+  }
+  return json;
+}

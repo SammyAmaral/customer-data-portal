@@ -10,6 +10,8 @@ export function parseHash() {
   if (t) return { name: 'tech', key: t[1].toUpperCase() };
   const m = h.match(/^\/report\/([A-Za-z][A-Za-z0-9]+-\d+)/);
   if (m) return { name: 'report', key: m[1].toUpperCase() };
+  const cr = h.match(/^\/change\/([A-Za-z][A-Za-z0-9]+-\d+)/);
+  if (cr) return { name: 'change', key: cr[1].toUpperCase() };
   return { name: 'portfolio' };
 }
 
