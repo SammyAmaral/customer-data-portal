@@ -16,7 +16,7 @@
    The raw Bitbucket URL is only ever returned to INTERNAL callers.
    ========================================================================= */
 import { getUserScope, requireJira, fetchIssue } from './_access.js';
-import { CF, firstLink, stripPrefix, adfText } from './_map.js';
+import { CF, firstLink, stripPrefix, adfText, dateOnly } from './_map.js';
 
 const BB_TOKEN = process.env.BITBUCKET_TOKEN || '';
 const BB_USER = process.env.BITBUCKET_USER || '';
@@ -74,7 +74,7 @@ export default async function handler(req, res) {
 
   try {
     const issue = await fetchIssue(feed, {
-      fields: ['parent', 'summary', CF.feedSchema, CF.jobLinkFull, CF.jobLinkSample],
+      fields: ['parent', 'summary', CF.feedSchema, CF.jobLinkFull, CF.jobLinkSample, CF.sampleApprovedDate],
     });
     if (!issue || !issue.fields) { res.status(404).json({ error: 'Feed not found.' }); return; }
 
@@ -111,9 +111,14 @@ export default async function handler(req, res) {
       }
     }
 
-    // ---- 2. Fallback: live field coverage from the latest crawl job -------
-    const jobLink = adfText(f[CF.jobLinkFull]) || adfText(f[CF.jobLinkSample]) || '';
-    const jm = jobLink.match(/\/p\/(\d+)\/(\d+)\/(\d+)/);
+    // ---- 2. Fallback: live field coverage from the DELIVERED crawl job -----
+    // The dataset the customer received: the full crawl once the sample is
+    // approved, otherwise the sample.
+    const approved = !!dateOnly(f[CF.sampleApprovedDate]);
+    const fullLink = adfText(f[CF.jobLinkFull]) || '';
+    const sampleLink = adfText(f[CF.jobLinkSample]) || '';
+    const deliveredLink = approved ? (fullLink || sampleLink) : (sampleLink || fullLink);
+    const jm = deliveredLink.match(/\/p\/(\d+)\/(\d+)\/(\d+)/);
     const job = jm ? `${jm[1]}/${jm[2]}/${jm[3]}` : null;
     if (job && SC_KEY) {
       try {

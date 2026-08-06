@@ -403,9 +403,16 @@ export function mapFeed(issue, histories, asOf) {
   const sampleApproved = dateOnly(f[CF.sampleApprovedDate]) || cl.sampleApproved;
   const created = f.created || null;
   const end = sampleApproved || f.resolutiondate || asOf;
-  // Scrapy Cloud linkage: project id comes from a job link, spider from the name field.
-  const jobLink = adfText(f[CF.jobLinkFull]) || adfText(f[CF.jobLinkSample]) || '';
-  const jm = jobLink.match(/\/p\/(\d+)\/(\d+)\/(\d+)/);
+  // Scrapy Cloud linkage. Two human-curated job pointers on the ticket:
+  //   Sampling Job Link(s) (cf_14251) = the QA-approved SAMPLE sent to the customer
+  //   Job Link(s)          (cf_14250) = the FULL crawl delivered after approval
+  // Both are app.zyte.com/p/{project}/{spider}/{job} → a HubStorage job key.
+  const fullLink = adfText(f[CF.jobLinkFull]) || '';
+  const sampleLink = adfText(f[CF.jobLinkSample]) || '';
+  const fm = fullLink.match(/\/p\/(\d+)\/(\d+)\/(\d+)/);
+  const sm = sampleLink.match(/\/p\/(\d+)\/(\d+)\/(\d+)/);
+  const fullJobKey = fm ? `${fm[1]}/${fm[2]}/${fm[3]}` : null;
+  const sampleJobKey = sm ? `${sm[1]}/${sm[2]}/${sm[3]}` : null;
   return {
     key: issue.key,
     name: stripPrefix(f.summary) || issue.key,
@@ -420,8 +427,13 @@ export function mapFeed(issue, histories, asOf) {
     subscriptionPrice: num(f[CF.subscriptionPrice]),
     daysOpen: created ? businessDaysBetween(created, end) : null,
     spiderName: cleanText(f[CF.spiderName]) || null,
-    scProject: jm ? jm[1] : null,
-    scJobKey: jm ? `${jm[1]}/${jm[2]}/${jm[3]}` : null,
+    // The exact QA-approved jobs (delivered datasets), from the Jira links.
+    sampleJobKey,
+    fullJobKey,
+    sampleJobUrl: sampleJobKey ? `https://app.zyte.com/p/${sampleJobKey}` : null,
+    fullJobUrl: fullJobKey ? `https://app.zyte.com/p/${fullJobKey}` : null,
+    scProject: fm ? fm[1] : (sm ? sm[1] : null),
+    scJobKey: fullJobKey || sampleJobKey,
     config: {
       schema: firstLink(f[CF.feedSchema]),
       frequency: selectValue(f[CF.deliveryFrequency]),

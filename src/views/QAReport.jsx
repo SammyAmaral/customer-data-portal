@@ -15,7 +15,7 @@ import { ArrowLeft, Printer, ShieldCheck, CheckCircle2, AlertTriangle, XCircle }
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
-import { fmtMoney, fmtDate, cx } from '../lib/ui.js';
+import { fmtMoney, fmtDate, feedItems, cx } from '../lib/ui.js';
 import { PieChart } from '../components/charts.jsx';
 import AccessDenied from './AccessDenied.jsx';
 
@@ -209,7 +209,7 @@ export default function QAReport({ epicKey }) {
                       <tr key={f.key}>
                         <td className="cdp-feedname">{f.name}</td>
                         <td style={{ fontSize: 12, color: 'var(--slate)' }}>{f.status}</td>
-                        <td className="center">{f.records != null ? fmtMoney(f.records) : '—'}</td>
+                        <td className="center">{feedItems(f) != null ? fmtMoney(feedItems(f)) : '—'}</td>
                         <td className="center">{f.sampleApproved ? fmtDate(f.sampleApproved) : '—'}</td>
                         <td className="center" style={{ fontWeight: 700 }}>{qa.score}</td>
                         <td><GradeChip grade={qa.grade} /></td>

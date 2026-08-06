@@ -38,7 +38,9 @@ export default function SchemaView({ epicKey, feedKey }) {
   }, [epic, setEngagement]);
 
   const feed = epic && (epic.feeds || []).find((f) => f.key === feedKey);
-  const jobKey = feed && feed.jobKey;
+  // Prefer the delivered dataset (sample pre-approval, full crawl after) so
+  // coverage reflects what the customer received, not the latest attempt.
+  const jobKey = feed && (feed.deliveredJobKey || feed.jobKey);
 
   useEffect(() => {
     if (!jobKey) return undefined;

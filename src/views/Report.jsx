@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck } from 'lucide-react';
 import { fetchWithAuth, postWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
-import { fmtDate, fmtMoney, ragToken, statusToken, cx, isNotStarted } from '../lib/ui.js';
+import { fmtDate, fmtMoney, ragToken, statusToken, feedItems, deliveryPhaseLabel, cx, isNotStarted } from '../lib/ui.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { ReportSkeleton } from '../components/Skeleton.jsx';
@@ -65,7 +65,7 @@ export default function Report({ epicKey, email }) {
   const pricedFeeds = feeds.filter((f) => f.subscriptionPrice != null);
   const pricedSum = pricedFeeds.reduce((s, f) => s + f.subscriptionPrice, 0);
   const missingPrice = feeds.length - pricedFeeds.length;
-  const totalRecords = feeds.reduce((s, f) => s + (f.records || 0), 0);
+  const totalRecords = feeds.reduce((s, f) => s + (feedItems(f) || 0), 0);
   const unhealthyJobs = feeds.filter((f) => f.jobState && !f.jobHealthy).length;
   const c = data.commercial || {};
   const hasCommercial = c.setupFee != null || c.mrrValue != null || c.totalContractValue != null || pricedFeeds.length > 0;
@@ -203,6 +203,7 @@ export default function Report({ epicKey, email }) {
                 <tbody>
                   {data.feeds.map((f) => {
                     const st = statusToken(f.statusCategory);
+                    const items = feedItems(f);
                     return (
                       <tr key={f.key}>
                         <td className="cdp-feedname">{f.name}{f.jobState && (
@@ -211,7 +212,9 @@ export default function Report({ epicKey, email }) {
                         <td><span className="cdp-statuschip" style={{ color: st.color, background: st.tint }} title={`Jira status: ${f.status}`}>
                           <span className="dot" style={{ background: st.color }} />{f.status}</span></td>
                         <td className="center">{f.volumeBand ? <span className="cdp-band">{f.volumeBand}</span> : '—'}</td>
-                        <td className="center">{f.records != null ? fmtMoney(f.records) : '—'}</td>
+                        <td className="center">{items != null
+                          ? <>{fmtMoney(items)}{f.deliveredPhase && <span className="cdp-src" title={`Items in the ${deliveryPhaseLabel(f.deliveredPhase)} delivered to the customer`}>{f.deliveredPhase === 'full' ? 'FULL' : 'SAMPLE'}</span>}</>
+                          : '—'}</td>
                         <td className="center">{f.subscriptionPrice != null
                           ? <>{fmtMoney(f.subscriptionPrice)}{f.priceSource === 'sow' && <span className="cdp-src" title="Filled from the SOW">SOW</span>}</>
                           : '—'}</td>
@@ -323,6 +326,8 @@ function FeedPanel({ feed, email, onClose }) {
       <div className="cdp-fp-sample">
         <div className="cdp-fp-sample-row"><span>1st sample sent</span><b>{fmtDate(feed.firstSampleSent)}</b></div>
         <div className="cdp-fp-sample-row"><span>Sample approved</span><b>{feed.sampleApproved ? fmtDate(feed.sampleApproved) : (approval ? 'Approved' : '—')}</b></div>
+        {feed.sampleItems != null && <div className="cdp-fp-sample-row"><span>Sample items delivered</span><b>{fmtMoney(feed.sampleItems)}</b></div>}
+        {feed.fullItems != null && <div className="cdp-fp-sample-row"><span>Full-crawl items delivered</span><b>{fmtMoney(feed.fullItems)}</b></div>}
         {feed.sampleApproved ? (
           <div className="cdp-fp-approved"><Check size={14} /> Approved in Jira · {fmtDate(feed.sampleApproved)}</div>
         ) : approval ? (

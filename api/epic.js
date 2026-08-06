@@ -110,7 +110,14 @@ export default async function handler(req, res) {
     detail.scrapyStatus = scrapyStatus;
     // The technical config + crawl alerts/diagnostics are internal-only.
     if (scope.internal) detail.scrapyDebug = scrapyDebug;
-    else for (const f of feeds) { delete f.config; delete f.alerts; delete f.renderPct; delete f.responses; delete f.blocked; }
+    else for (const f of feeds) {
+      delete f.config; delete f.alerts; delete f.renderPct; delete f.responses; delete f.blocked;
+      // Internal Scrapy Cloud identifiers/links — customers keep the item COUNTS
+      // (records / sampleItems / fullItems / deliveredItems) but not the job keys.
+      delete f.jobKey; delete f.jobUrl; delete f.jobProject;
+      delete f.sampleJobKey; delete f.fullJobKey; delete f.sampleJobUrl; delete f.fullJobUrl;
+      delete f.deliveredJobKey; delete f.scJobKey; delete f.scProject;
+    }
 
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
     res.status(200).json(detail);

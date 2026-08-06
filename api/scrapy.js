@@ -209,25 +209,68 @@ function computeAlerts(summary, stats) {
   return { alerts, responses, blocked, renderPct };
 }
 
+// Item count + finish info for one exact job, from its Scrapy stats dict.
+function jobDelivery(jobKey, stats) {
+  if (!stats) return { jobKey, items: null, finished: null };
+  return { jobKey, items: Number(stats.item_scraped_count) || 0, finished: dateStr(stats.finish_time) };
+}
+
+// The DELIVERED datasets: item counts from the exact Jira-linked SAMPLE
+// (cf_14251) and FULL-crawl (cf_14250) jobs. `deliveredItems` follows the
+// phase — the full crawl once the customer has approved the sample, else the
+// sample. Works off the explicit job keys, so it needs no project resolution.
+async function fetchDelivered(feed, probe) {
+  const d = {};
+  if (feed.sampleJobKey) {
+    const st = await fetchJobStats(feed.sampleJobKey, probe).catch(() => null);
+    const j = jobDelivery(feed.sampleJobKey, st);
+    d.sampleItems = j.items; d.sampleFinished = j.finished;
+  }
+  if (feed.fullJobKey) {
+    const st = await fetchJobStats(feed.fullJobKey, probe).catch(() => null);
+    const j = jobDelivery(feed.fullJobKey, st);
+    d.fullItems = j.items; d.fullFinished = j.finished;
+  }
+  const approved = !!feed.sampleApproved;
+  if (approved && d.fullItems != null) { d.deliveredPhase = 'full'; d.deliveredItems = d.fullItems; d.deliveredJobKey = feed.fullJobKey; d.deliveredFinished = d.fullFinished; }
+  else if (d.sampleItems != null) { d.deliveredPhase = 'sample'; d.deliveredItems = d.sampleItems; d.deliveredJobKey = feed.sampleJobKey; d.deliveredFinished = d.sampleFinished; }
+  else if (d.fullItems != null) { d.deliveredPhase = 'full'; d.deliveredItems = d.fullItems; d.deliveredJobKey = feed.fullJobKey; d.deliveredFinished = d.fullFinished; }
+  return d;
+}
+
+// Merge a telemetry blob onto a feed. Every field is guarded so a delivered-
+// only feed (Jira links but no resolvable spider) isn't blanked out.
 function apply(feed, s) {
-  feed.records = s.records;
-  feed.alerts = s.alerts || [];
-  feed.responses = s.responses != null ? s.responses : null;
-  feed.renderPct = s.renderPct != null ? s.renderPct : null;
-  feed.blocked = s.blocked || 0;
-  feed.recordsRecent = s.recordsRecent;
-  feed.jobRuns = s.runs;
-  feed.jobState = s.state;
-  feed.jobCloseReason = s.closeReason;
-  feed.jobErrors = s.errors;
-  feed.jobErrorsRecent = s.errorsRecent;
-  feed.jobFinished = s.finished;
-  feed.jobHealthy = !!s.healthy;
-  feed.jobSource = s.source;                 // 'prod' | 'dev'
-  feed.jobProject = s.project;
-  feed.jobKey = s.jobKey;
-  feed.jobUrl = s.jobKey ? `https://app.zyte.com/p/${s.jobKey}`
-    : (s.project ? `https://app.zyte.com/p/${s.project}` : null);
+  if (!s) return;
+  if (s.records != null) feed.records = s.records;
+  if (s.alerts) feed.alerts = s.alerts;
+  if ('responses' in s) feed.responses = s.responses != null ? s.responses : null;
+  if ('renderPct' in s) feed.renderPct = s.renderPct != null ? s.renderPct : null;
+  if ('blocked' in s) feed.blocked = s.blocked || 0;
+  if (s.recordsRecent != null) feed.recordsRecent = s.recordsRecent;
+  if (s.runs != null) { feed.jobRuns = s.runs; feed.crawlAttempts = s.runs; }
+  if ('state' in s) feed.jobState = s.state;
+  if ('closeReason' in s) feed.jobCloseReason = s.closeReason;
+  if (s.errors != null) feed.jobErrors = s.errors;
+  if (s.errorsRecent != null) feed.jobErrorsRecent = s.errorsRecent;
+  if ('finished' in s) feed.jobFinished = s.finished;
+  if ('healthy' in s) feed.jobHealthy = !!s.healthy;
+  if ('source' in s) feed.jobSource = s.source;             // 'prod' | 'dev'
+  if ('project' in s) feed.jobProject = s.project;
+  if ('jobKey' in s) {
+    feed.jobKey = s.jobKey;
+    feed.jobUrl = s.jobKey ? `https://app.zyte.com/p/${s.jobKey}`
+      : (s.project ? `https://app.zyte.com/p/${s.project}` : null);
+  }
+  // Delivered datasets (sample / full).
+  if ('sampleItems' in s) feed.sampleItems = s.sampleItems;
+  if ('sampleFinished' in s) feed.sampleFinished = s.sampleFinished;
+  if ('fullItems' in s) feed.fullItems = s.fullItems;
+  if ('fullFinished' in s) feed.fullFinished = s.fullFinished;
+  if ('deliveredPhase' in s) feed.deliveredPhase = s.deliveredPhase;
+  if ('deliveredItems' in s) feed.deliveredItems = s.deliveredItems;
+  if ('deliveredJobKey' in s) feed.deliveredJobKey = s.deliveredJobKey;
+  if ('deliveredFinished' in s) feed.deliveredFinished = s.deliveredFinished;
 }
 
 // Attach crawl telemetry to each feed. scConfig = { prodProject, devProject }.
@@ -237,6 +280,8 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
 
   // Prefer the explicit prod/dev project fields on the Epic; otherwise fall
   // back to listing the data org and picking its prod/dev projects by name.
+  // (Projects are needed only for the iteration/health jobq lookup — the
+  // delivered sample/full jobs are fetched by their exact keys regardless.)
   let projects = [
     { id: scConfig.prodProject, env: 'prod' },
     { id: scConfig.devProject, env: 'dev' },
@@ -246,23 +291,28 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
     projects = rankProjects(await orgProjects(scConfig.org));
     via = 'org-listing';
   }
-  if (!projects.length) return { status: scConfig.org ? 'no-projects-in-org' : 'no-projects', enriched: 0 };
 
   // Resolve each feed's spider (explicit field, else derived from the domain).
-  const targets = [];
   for (const f of feeds) {
     const spider = f.spiderName || deriveSpiderName(f.name);
-    if (spider) { f.spiderResolved = spider; targets.push(f); }
-    if (targets.length >= MAX_FEEDS) break;
+    if (spider) f.spiderResolved = spider;
   }
-  if (!targets.length) return { status: 'no-spiders', enriched: 0 };
+  // Process any feed we can say something about: a resolvable spider (for
+  // iteration/health) OR a Jira-linked delivered job (sample/full items).
+  const toProcess = feeds
+    .filter((f) => (f.spiderResolved && projects.length) || f.sampleJobKey || f.fullJobKey)
+    .slice(0, MAX_FEEDS);
+  if (!toProcess.length) {
+    const status = projects.length ? 'no-spiders' : (scConfig.org ? 'no-projects-in-org' : 'no-projects');
+    return { status, enriched: 0 };
+  }
 
   const cacheKey = (f) => `${epicKey}:${f.key}`;
   const cache = {};
   if (svc) {
     try {
       const { data } = await svc.from('scrapy_jobs')
-        .select('key, data, fetched_at').in('key', targets.map(cacheKey));
+        .select('key, data, fetched_at').in('key', toProcess.map(cacheKey));
       for (const row of data || []) {
         if (row.data && Date.now() - new Date(row.fetched_at).getTime() < CACHE_TTL_MS) cache[row.key] = row.data;
       }
@@ -272,22 +322,32 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
   let enriched = 0;
   const toCache = [];
   const probe = { calls: 0, ok: 0, status: {} }; // HTTP outcomes for diagnostics
-  await Promise.all(targets.map(async (f) => {
+  await Promise.all(toProcess.map(async (f) => {
     const k = cacheKey(f);
     if (cache[k]) { apply(f, cache[k]); enriched++; return; }
+    const data = {};
     try {
-      let summary = null;
-      for (const p of projects) {          // production first, then development
-        const jobs = await fetchSpiderJobs(p.id, f.spiderResolved, probe);
-        if (jobs && jobs.length) { summary = summarize(jobs, p.id, p.env); break; }
+      // Iteration + health from jobq (needs a resolvable spider + a project).
+      if (f.spiderResolved && projects.length) {
+        let summary = null;
+        for (const p of projects) {        // production first, then development
+          const jobs = await fetchSpiderJobs(p.id, f.spiderResolved, probe);
+          if (jobs && jobs.length) { summary = summarize(jobs, p.id, p.env); break; }
+        }
+        if (summary) {
+          let stats = null;
+          try { stats = await fetchJobStats(summary.jobKey, probe); } catch { /* best-effort */ }
+          Object.assign(summary, computeAlerts(summary, stats));
+          Object.assign(data, summary);
+        }
       }
-      if (summary) {
-        let stats = null;
-        try { stats = await fetchJobStats(summary.jobKey, probe); } catch { /* stats best-effort */ }
-        Object.assign(summary, computeAlerts(summary, stats));
-        apply(f, summary);
+      // Delivered datasets (sample cf_14251 / full cf_14250 job items).
+      if (f.sampleJobKey || f.fullJobKey) Object.assign(data, await fetchDelivered(f, probe));
+
+      if (Object.keys(data).length) {
+        apply(f, data);
         enriched++;
-        toCache.push({ key: k, epic_key: epicKey, spider: f.spiderResolved, data: summary, fetched_at: new Date().toISOString() });
+        toCache.push({ key: k, epic_key: epicKey, spider: f.spiderResolved || null, data, fetched_at: new Date().toISOString() });
       }
     } catch (e) { console.warn('[scrapy] feed', f.key, String((e && e.message) || e)); }
   }));
@@ -302,11 +362,11 @@ export async function enrichFeeds(epicKey, feeds, scConfig = {}) {
   const authRejected = !!(probe.status[401] || probe.status[403]);
   const debug = {
     projects: projects.map((p) => `${p.env}:${p.id}`),
-    via, spiders: targets.length, enriched,
+    via, spiders: toProcess.length, enriched,
     jobCalls: probe.calls, jobCallsOk: probe.ok, httpErrors: httpErrors || null, authRejected,
   };
   console.log('[scrapy]', epicKey, 'via', via, 'projects', debug.projects.join(','),
-    'spiders', targets.length, 'enriched', enriched, 'jobCalls', probe.calls, 'ok', probe.ok,
+    'feeds', toProcess.length, 'enriched', enriched, 'jobCalls', probe.calls, 'ok', probe.ok,
     'httpErrors', httpErrors || 'none');
   return { status: enriched ? 'ok' : 'no-jobs', enriched, debug };
 }

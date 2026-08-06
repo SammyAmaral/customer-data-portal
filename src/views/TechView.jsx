@@ -16,7 +16,7 @@ import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { TechSkeleton } from '../components/Skeleton.jsx';
 import { BarChart } from '../components/charts.jsx';
-import { fmtMoney, statusToken, cx } from '../lib/ui.js';
+import { fmtMoney, statusToken, feedItems, deliveryPhaseLabel, cx } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
 // Delivery frequency → crawl runs per month (for the monthly-items estimate).
@@ -211,7 +211,7 @@ function TechList({ feeds, epicKey }) {
       <table className="cdp-table">
         <thead>
           <tr>
-            <th>Crawler</th><th>Status</th><th>Alerts</th><th>Items / crawl</th><th>Recent</th><th>Errors</th>
+            <th>Crawler</th><th>Status</th><th>Alerts</th><th>Delivered items</th><th>Recent</th><th>Errors</th>
             <th>Last run</th><th>Source</th><th>Schema</th>
           </tr>
         </thead>
@@ -230,12 +230,14 @@ function TechList({ feeds, epicKey }) {
                     {f.alerts.map((a, i) => <span key={i} className={cx('cdp-alert', a.level)} title={a.code}>{a.label}</span>)}
                   </div>
                 ) : <span style={{ color: 'var(--rag-green)' }}>OK</span>}</td>
-                <td className="center">{f.records != null ? fmtMoney(f.records) : '—'}</td>
+                <td className="center">{feedItems(f) != null
+                  ? <>{fmtMoney(feedItems(f))}{f.deliveredPhase && <span className="cdp-tag" title={`${deliveryPhaseLabel(f.deliveredPhase)} delivered`}>{f.deliveredPhase === 'full' ? 'full' : 'sample'}</span>}</>
+                  : '—'}</td>
                 <td className="center">{f.recordsRecent != null ? fmtMoney(f.recordsRecent) : '—'}</td>
                 <td className="center" style={{ color: f.jobErrors ? 'var(--rag-red)' : 'inherit', fontWeight: f.jobErrors ? 700 : 400 }}>{f.jobErrors != null ? f.jobErrors : '—'}</td>
                 <td className="center">{f.jobFinished || '—'}</td>
                 <td className="center">{f.jobSource ? <span className="cdp-tag">{f.jobSource === 'prod' ? 'prod' : 'dev'}</span> : '—'}</td>
-                <td className="center">{f.jobKey ? <a href={`#/tech/${epicKey}/schema/${encodeURIComponent(f.key)}`}>coverage ↗</a> : '—'}</td>
+                <td className="center">{(f.deliveredJobKey || f.jobKey) ? <a href={`#/tech/${epicKey}/schema/${encodeURIComponent(f.key)}`}>coverage ↗</a> : '—'}</td>
               </tr>
             );
           })}
@@ -248,9 +250,13 @@ function TechList({ feeds, epicKey }) {
 function TechCard({ f, epicKey }) {
   const st = statusToken(f.statusCategory);
   const cfg = f.config || {};
-  const perCrawl = f.records != null ? f.records : null;
+  const delivered = feedItems(f);
+  const deliveredLabel = f.deliveredPhase === 'full' ? 'Full-crawl items'
+    : f.deliveredPhase === 'sample' ? 'Sample items' : 'Latest crawl items';
+  // Monthly estimate tracks the full crawl (the recurring delivery) once known.
+  const monthlyBase = f.fullItems != null ? f.fullItems : (f.deliveredItems != null ? f.deliveredItems : f.records);
   const rpm = runsPerMonth(cfg.frequency);
-  const monthly = perCrawl != null && rpm != null ? Math.round(perCrawl * rpm) : null;
+  const monthly = monthlyBase != null && rpm != null ? Math.round(monthlyBase * rpm) : null;
 
   const complexity = [
     cfg.crawlingComplexity && `crawl ${cfg.crawlingComplexity}`,
@@ -270,6 +276,7 @@ function TechCard({ f, epicKey }) {
         </span>
         {'  '}· {jobStateLabel(f)}
         {f.jobSource && <span className="cdp-tag" title="Which Scrapy Cloud project the jobs came from">{f.jobSource === 'prod' ? 'production' : 'development'}</span>}
+        {f.deliveredPhase && <span className="cdp-tag" style={{ color: 'var(--rag-green)', background: 'rgba(14,156,120,.12)' }} title={`This feed's ${deliveryPhaseLabel(f.deliveredPhase)} has been delivered to the customer`}>✓ {f.deliveredPhase} delivered</span>}
       </div>
 
       {f.alerts && f.alerts.length > 0 && (
@@ -280,8 +287,8 @@ function TechCard({ f, epicKey }) {
 
       <div className="cdp-metrics">
         <div className="cdp-metric">
-          <div className="m-n">{perCrawl != null ? fmtMoney(perCrawl) : '—'}</div>
-          <div className="m-l">Items / crawl</div>
+          <div className="m-n">{delivered != null ? fmtMoney(delivered) : '—'}</div>
+          <div className="m-l">{deliveredLabel}</div>
         </div>
         <div className="cdp-metric" title={f.jobRuns ? `Sum across the last ${f.jobRuns} runs` : undefined}>
           <div className="m-n">{f.recordsRecent != null ? fmtMoney(f.recordsRecent) : '—'}</div>
@@ -306,10 +313,16 @@ function TechCard({ f, epicKey }) {
       </div>
 
       <dl className="cdp-cfg">
+        <dt>Sample sent</dt>
+        <dd>{f.sampleItems != null ? <>{fmtMoney(f.sampleItems)} items{f.sampleFinished ? ` · ${f.sampleFinished}` : ''}{f.sampleJobUrl && <> · <a href={f.sampleJobUrl} target="_blank" rel="noreferrer">job ↗</a></>}</> : '—'}</dd>
+        <dt>Full crawl</dt>
+        <dd>{f.fullItems != null ? <>{fmtMoney(f.fullItems)} items{f.fullFinished ? ` · ${f.fullFinished}` : ''}{f.fullJobUrl && <> · <a href={f.fullJobUrl} target="_blank" rel="noreferrer">job ↗</a></>}</> : '—'}</dd>
+        <dt>Crawl runs</dt>
+        <dd title="Recent crawl jobs seen for this spider (iteration volume)">{f.jobRuns != null ? f.jobRuns : '—'}</dd>
         <dt>Schema</dt>
         <dd>
           {cfg.schema ? <a href={cfg.schema} target="_blank" rel="noreferrer">schema ↗</a> : '—'}
-          {f.jobKey && <> · <a href={`#/tech/${epicKey}/schema/${encodeURIComponent(f.key)}`}>coverage</a></>}
+          {(f.deliveredJobKey || f.jobKey) && <> · <a href={`#/tech/${epicKey}/schema/${encodeURIComponent(f.key)}`}>coverage</a></>}
         </dd>
         <dt>Frequency</dt>
         <dd>{cfg.frequency || '—'}</dd>

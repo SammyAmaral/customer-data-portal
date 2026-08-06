@@ -51,6 +51,21 @@ export function feedToken(bucket) {
   return FEED[bucket] || FEED.todo;
 }
 
+// The item count a report should show for a feed: the delivered dataset — the
+// SAMPLE sent to the customer before approval, the FULL crawl after it — when
+// we know it, else the latest crawl attempt. Keeps every view consistent.
+export function feedItems(f) {
+  if (!f) return null;
+  if (f.deliveredItems != null) return f.deliveredItems;
+  return f.records != null ? f.records : null;
+}
+// 'sample' | 'full' | null → short label for the phase behind feedItems().
+export function deliveryPhaseLabel(phase) {
+  if (phase === 'full') return 'full crawl';
+  if (phase === 'sample') return 'sample';
+  return null;
+}
+
 export function cx(...parts) {
   return parts.filter(Boolean).join(' ');
 }
