@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck, Search } from 'lucide-react';
 import { fetchWithAuth, postWithAuth } from '../lib/auth.js';
@@ -17,7 +17,7 @@ export default function Report({ epicKey, email }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [feedQ, setFeedQ] = useState('');             // feed-table search
   const [statusSel, setStatusSel] = useState(() => new Set()); // status filter (multi)
-  const [sortKey, setSortKey] = useState('name');     // feed-table sort
+  const [sort, setSort] = useState({ key: null, dir: 'asc' }); // driven by column headers
   const toast = useToast();
   const { setEngagement } = useChrome();
 
@@ -84,14 +84,14 @@ export default function Report({ epicKey, email }) {
     return [...m.values()].sort((a, b) => a.status.localeCompare(b.status));
   })();
   const needle = feedQ.trim().toLowerCase();
-  const shownFeeds = feeds
+  const filtered = feeds
     .filter((f) => !needle || (f.name || '').toLowerCase().includes(needle))
-    .filter((f) => statusSel.size === 0 || statusSel.has(f.status || 'Unknown'))
-    .slice()
-    .sort(feedComparator(sortKey));
-  const filtersActive = !!needle || statusSel.size > 0 || sortKey !== 'name';
+    .filter((f) => statusSel.size === 0 || statusSel.has(f.status || 'Unknown'));
+  const shownFeeds = sort.key ? [...filtered].sort((a, b) => compareFeeds(a, b, sort.key, sort.dir)) : filtered;
+  const filtersActive = !!needle || statusSel.size > 0 || !!sort.key;
   const toggleStatus = (s) => setStatusSel((prev) => { const n = new Set(prev); if (n.has(s)) n.delete(s); else n.add(s); return n; });
-  const clearFilters = () => { setFeedQ(''); setStatusSel(new Set()); setSortKey('name'); };
+  const clearFilters = () => { setFeedQ(''); setStatusSel(new Set()); setSort({ key: null, dir: 'asc' }); };
+  const onSort = (key) => setSort((p) => (p.key === key ? { key, dir: p.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
 
   return (
     <div className="cdp-wrap">
@@ -220,38 +220,28 @@ export default function Report({ epicKey, email }) {
                   <Search size={16} style={{ color: 'var(--slate)' }} />
                   <input placeholder="Search feed name…" value={feedQ} onChange={(e) => setFeedQ(e.target.value)} aria-label="Search feeds" />
                 </div>
-                <select className="cdp-select" value={sortKey} onChange={(e) => setSortKey(e.target.value)} aria-label="Sort feeds">
-                  <option value="name">Name · A–Z</option>
-                  <option value="name_desc">Name · Z–A</option>
-                  <option value="status">Status</option>
-                  <option value="records">Records · high to low</option>
-                  <option value="due">Due date · soonest</option>
-                  <option value="days">Days open · most</option>
-                </select>
+                {statusList.length > 1 && (
+                  <StatusDropdown options={statusList} selected={statusSel} onToggle={toggleStatus} onClear={() => setStatusSel(new Set())} />
+                )}
                 <span className="cdp-feedcount">{shownFeeds.length} of {feeds.length}</span>
                 {filtersActive && <button className="cdp-linkbtn" onClick={clearFilters}>Clear filters</button>}
               </div>
-              {statusList.length > 1 && (
-                <div className="cdp-statusfilter" role="group" aria-label="Filter by status">
-                  {statusList.map((s) => {
-                    const t = statusToken(s.category);
-                    const on = statusSel.has(s.status);
-                    return (
-                      <button key={s.status} type="button" className={cx('cdp-chip', on && 'active')} onClick={() => toggleStatus(s.status)} aria-pressed={on}>
-                        <span className="dot" style={{ background: t.color }} />{s.status} <span className="n">{s.count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
               {shownFeeds.length > 0 ? (
               <div style={{ overflowX: 'auto' }}>
               <table className="cdp-table">
                 <thead>
                   <tr>
-                    <th>Feed</th><th>Status</th><th>Volume band</th><th>Records</th><th>Subscription</th>
-                    <th>Start date</th><th>1st sample sent</th><th>Sample approved</th><th>Due date</th>
-                    <th>Days open</th><th>Schema · Notes</th>
+                    <SortHeader col="name" label="Feed" sort={sort} onSort={onSort} />
+                    <SortHeader col="status" label="Status" sort={sort} onSort={onSort} />
+                    <SortHeader col="band" label="Volume band" sort={sort} onSort={onSort} />
+                    <SortHeader col="records" label="Records" sort={sort} onSort={onSort} />
+                    <SortHeader col="sub" label="Subscription" sort={sort} onSort={onSort} />
+                    <SortHeader col="start" label="Start date" sort={sort} onSort={onSort} />
+                    <SortHeader col="sent" label="1st sample sent" sort={sort} onSort={onSort} />
+                    <SortHeader col="appr" label="Sample approved" sort={sort} onSort={onSort} />
+                    <SortHeader col="due" label="Due date" sort={sort} onSort={onSort} />
+                    <SortHeader col="days" label="Days open" sort={sort} onSort={onSort} />
+                    <th>Schema · Notes</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -493,24 +483,85 @@ function NotificationsCard({ epicKey, contacts }) {
   );
 }
 
-// Nulls last, ascending (soonest date first).
-function cmpDate(a, b) {
-  if (!a && !b) return 0;
-  if (!a) return 1;
-  if (!b) return -1;
-  return new Date(a) - new Date(b);
+// Sortable columns for the Data Feed Status table: accessor + value kind.
+const FEED_COLS = {
+  name:    { get: (f) => f.name, kind: 'str' },
+  status:  { get: (f) => f.status, kind: 'str' },
+  band:    { get: (f) => f.volumeBand, kind: 'str' },
+  records: { get: (f) => feedItems(f), kind: 'num' },
+  sub:     { get: (f) => f.subscriptionPrice, kind: 'num' },
+  start:   { get: (f) => f.startDate, kind: 'date' },
+  sent:    { get: (f) => f.firstSampleSent, kind: 'date' },
+  appr:    { get: (f) => f.sampleApproved, kind: 'date' },
+  due:     { get: (f) => f.dueDate, kind: 'date' },
+  days:    { get: (f) => f.daysOpen, kind: 'num' },
+};
+// Compare two feeds by a column; empties always sort last (both directions).
+function compareFeeds(a, b, key, dir) {
+  const col = FEED_COLS[key];
+  if (!col) return 0;
+  const va = col.get(a);
+  const vb = col.get(b);
+  const ea = va == null || va === '';
+  const eb = vb == null || vb === '';
+  if (ea && eb) return 0;
+  if (ea) return 1;
+  if (eb) return -1;
+  let r;
+  if (col.kind === 'num') r = Number(va) - Number(vb);
+  else if (col.kind === 'date') r = new Date(va) - new Date(vb);
+  else r = String(va).localeCompare(String(vb));
+  return dir === 'desc' ? -r : r;
 }
-// Comparator for the Data Feed Status table, keyed by the sort <select>.
-function feedComparator(key) {
-  const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
-  switch (key) {
-    case 'name_desc': return (a, b) => byName(b, a);
-    case 'status': return (a, b) => (a.status || '').localeCompare(b.status || '') || byName(a, b);
-    case 'records': return (a, b) => (feedItems(b) || 0) - (feedItems(a) || 0) || byName(a, b);
-    case 'due': return (a, b) => cmpDate(a.dueDate, b.dueDate) || byName(a, b);
-    case 'days': return (a, b) => (b.daysOpen || 0) - (a.daysOpen || 0) || byName(a, b);
-    default: return byName;
-  }
+
+// A clickable column header: click to sort, click again to flip direction.
+function SortHeader({ col, label, sort, onSort }) {
+  const active = sort.key === col;
+  return (
+    <th className="cdp-th-sort" onClick={() => onSort(col)} title="Sort by this column"
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      {label}{active && <span className="cdp-sortcaret">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
+    </th>
+  );
+}
+
+// Multi-select status filter dropdown (checkbox list; closes on outside/Esc).
+function StatusDropdown({ options, selected, onToggle, onClear }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const label = selected.size === 0 ? 'All statuses' : `${selected.size} selected`;
+  return (
+    <div className="cdp-msel" ref={ref}>
+      <button type="button" className="cdp-select cdp-msel-btn" onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open}>
+        Status: {label}
+      </button>
+      {open && (
+        <div className="cdp-msel-pop" role="listbox" aria-multiselectable="true">
+          {options.map((s) => {
+            const t = statusToken(s.category);
+            const on = selected.has(s.status);
+            return (
+              <label key={s.status} className="cdp-msel-opt">
+                <input type="checkbox" checked={on} onChange={() => onToggle(s.status)} />
+                <span className="dot" style={{ background: t.color }} />
+                <span className="lb">{s.status}</span>
+                <span className="n">{s.count}</span>
+              </label>
+            );
+          })}
+          {selected.size > 0 && <button type="button" className="cdp-msel-clear" onClick={onClear}>Clear selection</button>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function jobColor(f) {
