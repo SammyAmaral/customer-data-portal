@@ -440,6 +440,15 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-statuschip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;border-radius:999px;padding:3px 10px;white-space:nowrap;}
 .cdp-statuschip .dot{width:8px;height:8px;border-radius:50%;}
 
+/* ---- data feed filters ---- */
+.cdp-feedfilters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 0 12px;}
+.cdp-feedfilters .cdp-search{min-width:190px;max-width:320px;flex:1;}
+.cdp-feedcount{font-size:12.5px;color:var(--slate);font-weight:600;margin-left:auto;white-space:nowrap;}
+.cdp-statusfilter{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;}
+.cdp-statusfilter .cdp-chip{display:inline-flex;align-items:center;gap:7px;}
+.cdp-statusfilter .cdp-chip .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;}
+.cdp-statusfilter .cdp-chip .n{font-size:11px;opacity:.7;font-weight:700;}
+
 /* ---- skeletons ---- */
 .cdp-sk{display:inline-block;position:relative;overflow:hidden;background:var(--line);border-radius:8px;vertical-align:middle;}
 .cdp-sk::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.65),transparent);animation:cdpShimmer 1.3s infinite;}
@@ -613,7 +622,7 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 /* ---- print (customer PDF export) ---- */
 @media print{
   .cdp-root{background:#fff;}
-  .cdp-sidebar,.cdp-appbar,.cdp-actions,.cdp-backlink,.cdp-toaster,.cdp-skip,.cdp-sidepanel,.cdp-panel-backdrop,.cdp-iconbtn{display:none !important;}
+  .cdp-sidebar,.cdp-appbar,.cdp-actions,.cdp-backlink,.cdp-toaster,.cdp-skip,.cdp-sidepanel,.cdp-panel-backdrop,.cdp-iconbtn,.cdp-feedfilters,.cdp-statusfilter{display:none !important;}
   .cdp-main{display:block;}
   .cdp-report-hero{background:var(--navy-deep) !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
   .cdp-card,.cdp-metacard,.cdp-panel,.cdp-stepper,.cdp-table thead th{-webkit-print-color-adjust:exact;print-color-adjust:exact;}

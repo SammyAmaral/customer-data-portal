@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck, Search } from 'lucide-react';
 import { fetchWithAuth, postWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { fmtDate, fmtMoney, ragToken, statusToken, feedItems, deliveryPhaseLabel, cx, isNotStarted } from '../lib/ui.js';
@@ -15,6 +15,9 @@ export default function Report({ epicKey, email }) {
   const [nonce, setNonce] = useState(0);
   const [panelFeed, setPanelFeed] = useState(null);   // feed shown in the side panel
   const [panelOpen, setPanelOpen] = useState(false);
+  const [feedQ, setFeedQ] = useState('');             // feed-table search
+  const [statusSel, setStatusSel] = useState(() => new Set()); // status filter (multi)
+  const [sortKey, setSortKey] = useState('name');     // feed-table sort
   const toast = useToast();
   const { setEngagement } = useChrome();
 
@@ -69,6 +72,26 @@ export default function Report({ epicKey, email }) {
   const unhealthyJobs = feeds.filter((f) => f.jobState && !f.jobHealthy).length;
   const c = data.commercial || {};
   const hasCommercial = c.setupFee != null || c.mrrValue != null || c.totalContractValue != null || pricedFeeds.length > 0;
+
+  // --- Data Feed Status: search + status multi-filter + sort ---
+  const statusList = (() => {
+    const m = new Map();
+    for (const f of feeds) {
+      const s = f.status || 'Unknown';
+      const e = m.get(s) || { status: s, category: f.statusCategory, count: 0 };
+      e.count++; m.set(s, e);
+    }
+    return [...m.values()].sort((a, b) => a.status.localeCompare(b.status));
+  })();
+  const needle = feedQ.trim().toLowerCase();
+  const shownFeeds = feeds
+    .filter((f) => !needle || (f.name || '').toLowerCase().includes(needle))
+    .filter((f) => statusSel.size === 0 || statusSel.has(f.status || 'Unknown'))
+    .slice()
+    .sort(feedComparator(sortKey));
+  const filtersActive = !!needle || statusSel.size > 0 || sortKey !== 'name';
+  const toggleStatus = (s) => setStatusSel((prev) => { const n = new Set(prev); if (n.has(s)) n.delete(s); else n.add(s); return n; });
+  const clearFilters = () => { setFeedQ(''); setStatusSel(new Set()); setSortKey('name'); };
 
   return (
     <div className="cdp-wrap">
@@ -190,8 +213,39 @@ export default function Report({ epicKey, email }) {
       {/* ---- feed table (full width, after the narrative) ---- */}
       <div className="cdp-panel cdp-feedpanel">
           <h4>Data Feed Status</h4>
-          {data.feeds && data.feeds.length > 0 ? (
-            <div style={{ overflowX: 'auto' }}>
+          {feeds.length > 0 ? (
+            <>
+              <div className="cdp-feedfilters">
+                <div className="cdp-search">
+                  <Search size={16} style={{ color: 'var(--slate)' }} />
+                  <input placeholder="Search feed name…" value={feedQ} onChange={(e) => setFeedQ(e.target.value)} aria-label="Search feeds" />
+                </div>
+                <select className="cdp-select" value={sortKey} onChange={(e) => setSortKey(e.target.value)} aria-label="Sort feeds">
+                  <option value="name">Name · A–Z</option>
+                  <option value="name_desc">Name · Z–A</option>
+                  <option value="status">Status</option>
+                  <option value="records">Records · high to low</option>
+                  <option value="due">Due date · soonest</option>
+                  <option value="days">Days open · most</option>
+                </select>
+                <span className="cdp-feedcount">{shownFeeds.length} of {feeds.length}</span>
+                {filtersActive && <button className="cdp-linkbtn" onClick={clearFilters}>Clear filters</button>}
+              </div>
+              {statusList.length > 1 && (
+                <div className="cdp-statusfilter" role="group" aria-label="Filter by status">
+                  {statusList.map((s) => {
+                    const t = statusToken(s.category);
+                    const on = statusSel.has(s.status);
+                    return (
+                      <button key={s.status} type="button" className={cx('cdp-chip', on && 'active')} onClick={() => toggleStatus(s.status)} aria-pressed={on}>
+                        <span className="dot" style={{ background: t.color }} />{s.status} <span className="n">{s.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {shownFeeds.length > 0 ? (
+              <div style={{ overflowX: 'auto' }}>
               <table className="cdp-table">
                 <thead>
                   <tr>
@@ -201,7 +255,7 @@ export default function Report({ epicKey, email }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.feeds.map((f) => {
+                  {shownFeeds.map((f) => {
                     const st = statusToken(f.statusCategory);
                     const items = feedItems(f);
                     return (
@@ -238,7 +292,9 @@ export default function Report({ epicKey, email }) {
                   })}
                 </tbody>
               </table>
-            </div>
+              </div>
+              ) : <div className="cdp-empty">No feeds match your search or filters.</div>}
+            </>
           ) : <div className="cdp-empty">No data feeds recorded on this engagement yet.</div>}
           {unhealthyJobs > 0 && (
             <div style={{ marginTop: 10, fontSize: 12, color: 'var(--rag-red)', fontWeight: 600 }}>
@@ -435,6 +491,26 @@ function NotificationsCard({ epicKey, contacts }) {
       </div>
     </div>
   );
+}
+
+// Nulls last, ascending (soonest date first).
+function cmpDate(a, b) {
+  if (!a && !b) return 0;
+  if (!a) return 1;
+  if (!b) return -1;
+  return new Date(a) - new Date(b);
+}
+// Comparator for the Data Feed Status table, keyed by the sort <select>.
+function feedComparator(key) {
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+  switch (key) {
+    case 'name_desc': return (a, b) => byName(b, a);
+    case 'status': return (a, b) => (a.status || '').localeCompare(b.status || '') || byName(a, b);
+    case 'records': return (a, b) => (feedItems(b) || 0) - (feedItems(a) || 0) || byName(a, b);
+    case 'due': return (a, b) => cmpDate(a.dueDate, b.dueDate) || byName(a, b);
+    case 'days': return (a, b) => (b.daysOpen || 0) - (a.daysOpen || 0) || byName(a, b);
+    default: return byName;
+  }
 }
 
 function jobColor(f) {
