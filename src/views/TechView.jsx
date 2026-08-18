@@ -16,6 +16,7 @@ import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { TechSkeleton } from '../components/Skeleton.jsx';
 import { BarChart } from '../components/charts.jsx';
+import { SortHeader, useSort, sortRows } from '../components/SortHeader.jsx';
 import { fmtMoney, statusToken, feedItems, deliveryPhaseLabel, cx } from '../lib/ui.js';
 import AccessDenied from './AccessDenied.jsx';
 
@@ -205,18 +206,38 @@ export default function TechView({ epicKey }) {
   );
 }
 
+const TECH_COLS = {
+  crawler: { get: (f) => f.name, kind: 'str' },
+  status:  { get: (f) => f.status, kind: 'str' },
+  alerts:  { get: (f) => (f.alerts ? f.alerts.length : 0), kind: 'num' },
+  items:   { get: (f) => feedItems(f), kind: 'num' },
+  recent:  { get: (f) => f.recordsRecent, kind: 'num' },
+  errors:  { get: (f) => f.jobErrors, kind: 'num' },
+  lastrun: { get: (f) => f.jobFinished, kind: 'date' },
+  source:  { get: (f) => f.jobSource, kind: 'str' },
+};
+
 function TechList({ feeds, epicKey }) {
+  const { sort, onSort } = useSort();
+  const rows = sortRows(feeds, sort, TECH_COLS);
   return (
     <div style={{ overflowX: 'auto' }}>
       <table className="cdp-table">
         <thead>
           <tr>
-            <th>Crawler</th><th>Status</th><th>Alerts</th><th>Delivered items</th><th>Recent</th><th>Errors</th>
-            <th>Last run</th><th>Source</th><th>Schema</th>
+            <SortHeader col="crawler" label="Crawler" sort={sort} onSort={onSort} />
+            <SortHeader col="status" label="Status" sort={sort} onSort={onSort} />
+            <SortHeader col="alerts" label="Alerts" sort={sort} onSort={onSort} />
+            <SortHeader col="items" label="Delivered items" sort={sort} onSort={onSort} />
+            <SortHeader col="recent" label="Recent" sort={sort} onSort={onSort} />
+            <SortHeader col="errors" label="Errors" sort={sort} onSort={onSort} />
+            <SortHeader col="lastrun" label="Last run" sort={sort} onSort={onSort} />
+            <SortHeader col="source" label="Source" sort={sort} onSort={onSort} />
+            <th>Schema</th>
           </tr>
         </thead>
         <tbody>
-          {feeds.map((f) => {
+          {rows.map((f) => {
             const st = statusToken(f.statusCategory);
             return (
               <tr key={f.key}>

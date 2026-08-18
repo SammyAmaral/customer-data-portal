@@ -7,6 +7,7 @@ import { fmtDate, fmtMoney, ragToken, statusToken, feedItems, deliveryPhaseLabel
 import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { ReportSkeleton } from '../components/Skeleton.jsx';
+import { SortHeader, useSort, sortRows } from '../components/SortHeader.jsx';
 import AccessDenied from './AccessDenied.jsx';
 
 export default function Report({ epicKey, email }) {
@@ -17,7 +18,7 @@ export default function Report({ epicKey, email }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [feedQ, setFeedQ] = useState('');             // feed-table search
   const [statusSel, setStatusSel] = useState(() => new Set()); // status filter (multi)
-  const [sort, setSort] = useState({ key: null, dir: 'asc' }); // driven by column headers
+  const { sort, onSort, setSort } = useSort();                 // driven by column headers
   const toast = useToast();
   const { setEngagement } = useChrome();
 
@@ -87,11 +88,10 @@ export default function Report({ epicKey, email }) {
   const filtered = feeds
     .filter((f) => !needle || (f.name || '').toLowerCase().includes(needle))
     .filter((f) => statusSel.size === 0 || statusSel.has(f.status || 'Unknown'));
-  const shownFeeds = sort.key ? [...filtered].sort((a, b) => compareFeeds(a, b, sort.key, sort.dir)) : filtered;
+  const shownFeeds = sortRows(filtered, sort, FEED_COLS);
   const filtersActive = !!needle || statusSel.size > 0 || !!sort.key;
   const toggleStatus = (s) => setStatusSel((prev) => { const n = new Set(prev); if (n.has(s)) n.delete(s); else n.add(s); return n; });
   const clearFilters = () => { setFeedQ(''); setStatusSel(new Set()); setSort({ key: null, dir: 'asc' }); };
-  const onSort = (key) => setSort((p) => (p.key === key ? { key, dir: p.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
 
   return (
     <div className="cdp-wrap">
@@ -496,34 +496,6 @@ const FEED_COLS = {
   due:     { get: (f) => f.dueDate, kind: 'date' },
   days:    { get: (f) => f.daysOpen, kind: 'num' },
 };
-// Compare two feeds by a column; empties always sort last (both directions).
-function compareFeeds(a, b, key, dir) {
-  const col = FEED_COLS[key];
-  if (!col) return 0;
-  const va = col.get(a);
-  const vb = col.get(b);
-  const ea = va == null || va === '';
-  const eb = vb == null || vb === '';
-  if (ea && eb) return 0;
-  if (ea) return 1;
-  if (eb) return -1;
-  let r;
-  if (col.kind === 'num') r = Number(va) - Number(vb);
-  else if (col.kind === 'date') r = new Date(va) - new Date(vb);
-  else r = String(va).localeCompare(String(vb));
-  return dir === 'desc' ? -r : r;
-}
-
-// A clickable column header: click to sort, click again to flip direction.
-function SortHeader({ col, label, sort, onSort }) {
-  const active = sort.key === col;
-  return (
-    <th className="cdp-th-sort" onClick={() => onSort(col)} title="Sort by this column"
-      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
-      {label}{active && <span className="cdp-sortcaret">{sort.dir === 'asc' ? '▲' : '▼'}</span>}
-    </th>
-  );
-}
 
 // Multi-select status filter dropdown (checkbox list; closes on outside/Esc).
 function StatusDropdown({ options, selected, onToggle, onClear }) {
