@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { LogOut, LayoutGrid, FileText, Wrench, Menu, ChevronRight } from 'lucide-react';
+import { LogOut, LayoutGrid, FileText, Wrench, Menu, ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { getSession, onAuthChange, signOut, isConfigured } from './lib/auth.js';
 import { useHashRoute, navigate } from './lib/router.js';
 import { ToastProvider } from './lib/toast.jsx';
@@ -55,6 +55,9 @@ function cls(base, on, name = 'open') { return on ? `${base} ${name}` : base; }
 function Shell({ ready, session, route, email, onSignOut }) {
   const { engagement } = useChrome();
   const [navOpen, setNavOpen] = useState(false);
+  // Desktop: collapse the sidebar so the content spans the full screen (persisted).
+  const [collapsed, setCollapsed] = useState(() => { try { return localStorage.getItem('cdp_sidebar_collapsed') === '1'; } catch { return false; } });
+  const toggleCollapsed = () => setCollapsed((v) => { const n = !v; try { localStorage.setItem('cdp_sidebar_collapsed', n ? '1' : '0'); } catch { /* ignore */ } return n; });
 
   const signedIn = isConfigured && session;
   const engOpen = route.name === 'report' || route.name === 'tech' || route.name === 'tech-schema'
@@ -99,7 +102,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   const initial = (email || '?').trim().charAt(0).toUpperCase();
 
   return (
-    <div className="cdp-shell">
+    <div className={cls('cdp-shell', collapsed, 'sidebar-collapsed')}>
       <button className="cdp-skip" onClick={() => { const m = document.getElementById('cdp-main'); if (m) { m.focus(); m.scrollIntoView(); } }}>
         Skip to content
       </button>
@@ -140,6 +143,10 @@ function Shell({ ready, session, route, email, onSignOut }) {
         <header className="cdp-appbar">
           <button className="cdp-hamburger cdp-btn cdp-btn-ghost" onClick={() => setNavOpen((v) => !v)} aria-label="Toggle menu" aria-expanded={navOpen}>
             <Menu size={16} />
+          </button>
+          <button className="cdp-collapse cdp-btn cdp-btn-ghost" onClick={toggleCollapsed} aria-pressed={collapsed}
+            aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'} title={collapsed ? 'Show sidebar' : 'Hide sidebar'}>
+            {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
           <nav className="cdp-crumbs" aria-label="Breadcrumb">
             <button onClick={() => navigate('')}>Portfolio</button>
@@ -240,6 +247,7 @@ a{color:var(--blue);text-decoration:none;} a:hover{text-decoration:underline;}
 .cdp-appbar{position:sticky;top:0;z-index:15;display:flex;align-items:center;gap:12px;min-height:52px;padding:10px 22px;
   background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);}
 .cdp-hamburger{display:none;padding:7px 9px;}
+.cdp-collapse{display:inline-flex;padding:7px 9px;}
 .cdp-crumbs{display:flex;align-items:center;gap:7px;font-size:13px;min-width:0;}
 .cdp-crumbs button{background:none;border:0;cursor:pointer;color:var(--slate);font:inherit;font-weight:600;padding:0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cdp-crumbs button:hover{color:var(--blue);}
@@ -606,8 +614,14 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
   .cdp-sidebar{position:fixed;left:0;top:0;transform:translateX(-100%);transition:transform .22s ease;box-shadow:var(--sh-3);}
   .cdp-sidebar.open{transform:none;}
   .cdp-hamburger{display:inline-flex;}
+  .cdp-collapse{display:none;}   /* collapse is desktop-only; mobile uses the drawer */
 }
-@media(min-width:961px){ .cdp-backdrop{display:none;} }
+@media(min-width:961px){
+  .cdp-backdrop{display:none;}
+  /* Collapsed: hide the sidebar and let the content use the whole screen. */
+  .cdp-shell.sidebar-collapsed .cdp-sidebar{display:none;}
+  .cdp-shell.sidebar-collapsed .cdp-wrap{max-width:none;}
+}
 @media(max-width:860px){
   .cdp-metacards,.cdp-report-body,.cdp-report-narrative,.cdp-insights,.cdp-qa-split{grid-template-columns:1fr;}
   .cdp-stepper{flex-wrap:wrap;}
