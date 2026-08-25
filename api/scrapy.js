@@ -30,7 +30,7 @@ const SC_APP_BASE = (process.env.SCRAPYCLOUD_APP_BASE || 'https://app.zyte.com')
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const CACHE_TTL_MS = 60 * 60 * 1000; // crawl telemetry refreshes hourly
-const MAX_FEEDS = 60;                // bound external calls per report
+const MAX_FEEDS = 150;               // bound external calls per report (domains + sub-crawlers)
 const JOBS_PER_SPIDER = 20;          // recent-runs window we aggregate over
 
 export const scrapyConfigured = Boolean(SC_KEY);
@@ -132,6 +132,7 @@ function summarize(jobs, project, env) {
   return {
     records: Number(latestFinished.items_scraped) || 0,       // items in the latest crawl
     recordsRecent: sorted.reduce((s, j) => s + (Number(j.items_scraped) || 0), 0),
+    series: sorted.slice(0, 8).map((j) => Number(j.items_scraped) || 0).reverse(), // recent-run trend (old→new)
     runs: sorted.length,
     state,
     closeReason,
@@ -248,6 +249,7 @@ function apply(feed, s) {
   if ('renderPct' in s) feed.renderPct = s.renderPct != null ? s.renderPct : null;
   if ('blocked' in s) feed.blocked = s.blocked || 0;
   if (s.recordsRecent != null) feed.recordsRecent = s.recordsRecent;
+  if (s.series) feed.series = s.series;
   if (s.runs != null) { feed.jobRuns = s.runs; feed.crawlAttempts = s.runs; }
   if ('state' in s) feed.jobState = s.state;
   if ('closeReason' in s) feed.jobCloseReason = s.closeReason;

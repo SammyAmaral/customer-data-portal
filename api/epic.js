@@ -17,8 +17,6 @@ import {
 import { getSowPricing, domainKey } from './sow.js';
 import { enrichFeeds } from './scrapy.js';
 
-const MAX_CHANGELOG_FEEDS = 80; // safety cap on per-feed changelog fetches
-
 export default async function handler(req, res) {
   const scope = await getUserScope(req);
   if (!scope.ok) { res.status(scope.status).json({ error: scope.error }); return; }
@@ -40,26 +38,35 @@ export default async function handler(req, res) {
     const epic = await fetchIssue(key, { fields: EPIC_DETAIL_FIELDS });
     if (!epic || !epic.fields) { res.status(404).json({ error: 'Engagement not found.' }); return; }
 
-    // Children: crawling-component feeds + tasks (for the phase stepper).
+    // Domain-level crawling components + tasks (tasks feed the phase stepper).
     const children = await fetchIssues({
       jql: `parent = ${key} AND issuetype in ("Crawling-Component","Task","Handover") ORDER BY created ASC`,
       fields: [...FEED_FIELDS, 'parent'],
     });
-    const feedsRaw = children.filter((c) => c.fields && c.fields.issuetype && c.fields.issuetype.name === 'Crawling-Component');
+    const domainsRaw = children.filter((c) => c.fields && c.fields.issuetype && c.fields.issuetype.name === 'Crawling-Component');
     const tasks = children.filter((c) => c.fields && c.fields.issuetype && c.fields.issuetype.name === 'Task');
 
-    // Per-feed changelog → sample dates (best-effort, bounded, parallel).
-    const asOf = new Date().toISOString();
-    const capped = feedsRaw.slice(0, MAX_CHANGELOG_FEEDS);
-    const histories = await Promise.all(capped.map(async (feed) => {
+    // Sub-crawlers: Crawling-Components whose parent is a domain component (one
+    // level below the Epic). One batched query covers every domain.
+    let subsRaw = [];
+    if (domainsRaw.length) {
       try {
-        const full = await fetchIssue(feed.key, { fields: ['status'], expand: 'changelog' });
-        return (full && full.changelog && full.changelog.histories) || [];
-      } catch { return []; }
-    }));
-    const feeds = capped.map((feed, i) => mapFeed(feed, histories[i], asOf));
-    // Any feeds beyond the cap still appear, just without derived sample dates.
-    for (const feed of feedsRaw.slice(MAX_CHANGELOG_FEEDS)) feeds.push(mapFeed(feed, [], asOf));
+        subsRaw = await fetchIssues({
+          jql: `parent in (${domainsRaw.map((d) => d.key).join(',')}) AND issuetype = "Crawling-Component" ORDER BY created ASC`,
+          fields: [...FEED_FIELDS, 'parent'],
+        });
+      } catch { subsRaw = []; }
+    }
+
+    // Map every component. Sample dates come from the real cf_13588/cf_13589
+    // fields inside mapFeed, so no per-feed changelog fetch is needed.
+    const asOf = new Date().toISOString();
+    const feeds = domainsRaw.map((d) => mapFeed(d, [], asOf));
+    const subFeeds = subsRaw.map((s) => {
+      const f = mapFeed(s, [], asOf);
+      f.parentKey = (s.fields.parent && s.fields.parent.key) || null;
+      return f;
+    });
 
     // Gap-fill missing per-feed prices from the SOW (best-effort; never throws).
     let sowStatus = null;
@@ -87,7 +94,7 @@ export default async function handler(req, res) {
     let scrapyStatus = null;
     let scrapyDebug = null;
     try {
-      const sc = await enrichFeeds(key, feeds, {
+      const sc = await enrichFeeds(key, feeds.concat(subFeeds), {
         prodProject: parseZyteId(epic.fields[CF.scProdProject], 'p'),
         devProject: parseZyteId(epic.fields[CF.scDevProject], 'p'),
         org: parseZyteId(epic.fields[CF.zyteDataOrg], 'o'),
@@ -95,6 +102,28 @@ export default async function handler(req, res) {
       scrapyStatus = sc.status;
       scrapyDebug = sc.debug || null;
     } catch (e) { scrapyStatus = 'error'; }
+
+    // Group sub-crawlers under their domain component and roll up telemetry, so
+    // the domain card + report show aggregate items / errors / health.
+    if (subFeeds.length) {
+      const itemsOf = (s) => (s.deliveredItems != null ? s.deliveredItems : (s.records != null ? s.records : 0));
+      const isUnhealthy = (s) => s.jobState && !s.jobHealthy;
+      for (const d of feeds) {
+        const subs = subFeeds.filter((s) => s.parentKey === d.key);
+        if (!subs.length) continue;
+        d.subCrawlers = subs;
+        d.subCounts = { total: subs.length, healthy: subs.filter((s) => s.jobState && s.jobHealthy).length, attention: subs.filter(isUnhealthy).length };
+        d.deliveredItems = null; d.deliveredPhase = null;  // domain shows the rolled-up total, not a container's own job
+        d.records = subs.reduce((n, s) => n + itemsOf(s), 0);
+        d.recordsRecent = subs.reduce((n, s) => n + (s.recordsRecent || 0), 0);
+        d.jobErrors = subs.reduce((n, s) => n + (s.jobErrors || 0), 0);
+        d.jobErrorsRecent = subs.reduce((n, s) => n + (s.jobErrorsRecent || 0), 0);
+        d.jobHealthy = !subs.some(isUnhealthy);
+        d.jobState = subs.some((s) => s.jobState === 'running' || s.jobState === 'pending') ? 'running'
+          : (subs.some((s) => s.jobState) ? 'finished' : d.jobState);
+        d.jobFinished = subs.map((s) => s.jobFinished).filter(Boolean).sort().slice(-1)[0] || d.jobFinished;
+      }
+    }
 
     const kickoffDone = tasks.some((t) =>
       /kickoff|solution design/i.test((t.fields.summary) || '') &&
@@ -112,6 +141,7 @@ export default async function handler(req, res) {
     if (scope.internal) detail.scrapyDebug = scrapyDebug;
     else for (const f of feeds) {
       delete f.config; delete f.alerts; delete f.renderPct; delete f.responses; delete f.blocked;
+      delete f.subCrawlers;   // per-sub-crawler internals stay internal; customers keep the rolled-up totals
       // Internal Scrapy Cloud identifiers/links — customers keep the item COUNTS
       // (records / sampleItems / fullItems / deliveredItems) but not the job keys.
       delete f.jobKey; delete f.jobUrl; delete f.jobProject;

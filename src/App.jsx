@@ -388,6 +388,12 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-alert{font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;white-space:nowrap;}
 .cdp-alert.high{color:#fff;background:var(--rag-red);}
 .cdp-alert.warn{color:#7A531A;background:#FFF1D6;border:1px solid #F3D9A6;}
+/* domain sub-crawler roll-up */
+.cdp-subtoggle{display:inline-flex;align-items:center;gap:6px;margin:14px 0 2px;background:none;border:0;color:var(--blue);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 0;}
+.cdp-subtoggle:hover{text-decoration:underline;}
+.cdp-subtable{font-size:12px;margin-top:8px;}
+.cdp-subtable thead th{background:var(--wash);color:var(--slate);font-size:11px;padding:8px 10px;}
+.cdp-subtable tbody td{padding:8px 10px;}
 
 /* ---- feed comments / approval side panel ---- */
 .cdp-iconbtn{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--slate);cursor:pointer;transition:.13s;}

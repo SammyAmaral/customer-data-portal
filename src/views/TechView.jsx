@@ -9,7 +9,7 @@
    up once the classic job shape is confirmed on a live engagement.
    ========================================================================= */
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, RefreshCw, ExternalLink, Search, LayoutGrid, List, ClipboardCheck } from 'lucide-react';
+import { ArrowLeft, RefreshCw, ExternalLink, Search, LayoutGrid, List, ClipboardCheck, ChevronDown, ChevronRight } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
@@ -269,6 +269,7 @@ function TechList({ feeds, epicKey }) {
 }
 
 function TechCard({ f, epicKey }) {
+  if (f.subCrawlers && f.subCrawlers.length) return <GroupedTechCard f={f} epicKey={epicKey} />;
   const st = statusToken(f.statusCategory);
   const cfg = f.config || {};
   const delivered = feedItems(f);
@@ -368,6 +369,141 @@ function TechCard({ f, epicKey }) {
             : (f.spiderResolved || f.spiderName || '—')}
           {f.spiderResolved && !f.spiderName && <span className="cdp-tag" title="Derived from the site domain — no Spider Name set on the feed">derived</span>}
         </dd>
+      </dl>
+    </div>
+  );
+}
+
+/* ---- domain card with sub-crawler roll-up + breakdown ------------------- */
+const itemsBase = (s) => (s.fullItems != null ? s.fullItems : (s.deliveredItems != null ? s.deliveredItems : s.records));
+function subMonthly(s, domainFreq) {
+  const base = itemsBase(s);
+  const rpm = runsPerMonth((s.config && s.config.frequency) || domainFreq);
+  return base != null && rpm != null ? Math.round(base * rpm) : null;
+}
+// Longest common prefix of the sub spider names → strip it to get each type
+// (e.g. DOD_14462_hepsiburada_com_{products|reviews|offers}).
+function commonPrefix(strs) {
+  if (!strs.length) return '';
+  let pre = strs[0];
+  for (const s of strs) { let i = 0; while (i < pre.length && i < s.length && pre[i] === s[i]) i++; pre = pre.slice(0, i); }
+  return pre;
+}
+function subLabels(subs) {
+  const spiders = subs.map((s) => s.spiderResolved || s.spiderName || '');
+  const pre = spiders.every(Boolean) ? commonPrefix(spiders) : '';
+  return subs.map((s, i) => {
+    const sp = spiders[i];
+    const t = pre && sp ? sp.slice(pre.length).replace(/^_+/, '').replace(/_/g, ' ').trim() : '';
+    return t || s.name || s.key;
+  });
+}
+function domainSpiderPattern(f) {
+  const spiders = (f.subCrawlers || []).map((s) => s.spiderResolved || s.spiderName).filter(Boolean);
+  if (!spiders.length) return f.spiderResolved || f.spiderName || '—';
+  const pre = commonPrefix(spiders).replace(/_+$/, '');
+  return pre ? `${pre}_*` : (spiders[0] || '—');
+}
+
+function Sparkline({ series, color }) {
+  const data = (series || []).filter((n) => typeof n === 'number');
+  if (data.length < 2) return <span style={{ color: 'var(--slate)' }}>—</span>;
+  const peak = Math.max(...data, 1);
+  const w = 46, h = 18, n = data.length, bw = Math.max(3, Math.floor((w - (n - 1) * 2) / n));
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} style={{ verticalAlign: 'middle' }} aria-hidden="true">
+      {data.map((v, i) => {
+        const bh = Math.max(2, Math.round((v / peak) * (h - 2)));
+        return <rect key={i} x={i * (bw + 2)} y={h - bh} width={bw} height={bh} rx="1.5" fill={i === n - 1 ? (color || 'var(--blue)') : '#C7D9F3'} />;
+      })}
+    </svg>
+  );
+}
+
+function GroupedTechCard({ f, epicKey }) {
+  const [open, setOpen] = useState(false);
+  const st = statusToken(f.statusCategory);
+  const cfg = f.config || {};
+  const subs = f.subCrawlers || [];
+  const counts = f.subCounts || { total: subs.length, healthy: 0, attention: 0 };
+  const labels = subLabels(subs);
+  const monthlyTotal = subs.reduce((n, s) => n + (subMonthly(s, cfg.frequency) || 0), 0);
+
+  return (
+    <div className="cdp-techcard">
+      <h3>
+        {f.name}
+        {f.jobState && <span className="cdp-jobdot" title={jobStateLabel(f)} style={{ background: jobColor(f) }} />}
+      </h3>
+      <div className="sub">
+        <span className="cdp-statuschip" style={{ color: st.color, background: st.tint }} title={`Jira status: ${f.status}`}>
+          <span className="dot" style={{ background: st.color }} />{f.status}
+        </span>
+        {'  '}· {counts.total} sub-crawler{counts.total === 1 ? '' : 's'}
+        {counts.attention > 0
+          ? <span className="cdp-tag" style={{ color: 'var(--rag-red)', background: 'rgba(196,67,47,.12)' }}>{counts.attention} need attention</span>
+          : <span className="cdp-tag" style={{ color: 'var(--rag-green)', background: 'rgba(14,156,120,.12)' }}>all healthy</span>}
+        {f.jobSource && <span className="cdp-tag" title="Which Scrapy Cloud project the jobs came from">{f.jobSource === 'prod' ? 'production' : 'development'}</span>}
+      </div>
+
+      <div className="cdp-metrics" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
+        <div className="cdp-metric">
+          <div className="m-n">{monthlyTotal ? fmtMoney(monthlyTotal) : '—'}</div>
+          <div className="m-l">Items / month est.</div>
+        </div>
+        <div className="cdp-metric">
+          <div className="m-n">{f.records != null ? fmtMoney(f.records) : '—'}</div>
+          <div className="m-l">Latest crawl</div>
+        </div>
+        <div className="cdp-metric">
+          <div className="m-n" style={{ color: f.jobErrors ? 'var(--rag-red)' : 'inherit' }}>{f.jobErrors != null ? f.jobErrors : '—'}</div>
+          <div className="m-l">Errors · recent</div>
+        </div>
+        <div className="cdp-metric">
+          <div className="m-n">{counts.healthy} / {counts.total}</div>
+          <div className="m-l">Crawlers healthy</div>
+        </div>
+      </div>
+
+      <button className="cdp-subtoggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        {open ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+        {open ? 'Hide' : 'Show'} {counts.total} sub-crawler{counts.total === 1 ? '' : 's'}
+      </button>
+
+      {open && (
+        <div style={{ overflowX: 'auto' }}>
+          <table className="cdp-table cdp-subtable">
+            <thead><tr><th>Sub-crawler</th><th>Latest</th><th>/ month</th><th>Err</th><th>Trend</th><th>Last run</th></tr></thead>
+            <tbody>
+              {subs.map((s, i) => {
+                const m = subMonthly(s, cfg.frequency);
+                const linkable = s.deliveredJobKey || s.jobKey;
+                return (
+                  <tr key={s.key}>
+                    <td className="cdp-feedname">
+                      <span className="cdp-jobdot" title={jobStateLabel(s)} style={{ background: jobColor(s), marginLeft: 0, marginRight: 7 }} />
+                      {linkable ? <a href={`#/tech/${epicKey}/schema/${encodeURIComponent(s.key)}`}>{labels[i]}</a> : labels[i]}
+                    </td>
+                    <td className="center">{feedItems(s) != null ? fmtMoney(feedItems(s)) : '—'}</td>
+                    <td className="center">{m != null ? fmtMoney(m) : '—'}</td>
+                    <td className="center" style={{ color: s.jobErrors ? 'var(--rag-red)' : 'inherit', fontWeight: s.jobErrors ? 700 : 400 }}>{s.jobErrors != null ? s.jobErrors : '—'}</td>
+                    <td className="center"><Sparkline series={s.series} color={jobColor(s)} /></td>
+                    <td className="center">{s.jobFinished || '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <dl className="cdp-cfg" style={{ marginTop: 14 }}>
+        <dt>Frequency</dt><dd>{cfg.frequency || '—'}</dd>
+        <dt>Format</dt><dd>{[cfg.format, cfg.outputType].filter(Boolean).join(' · ') || '—'}</dd>
+        <dt>Data type</dt><dd>{[cfg.dataType, cfg.region].filter(Boolean).join(' · ') || '—'}</dd>
+        <dt>Crawler</dt><dd>{[cfg.crawlerType, cfg.zyteProducts].filter(Boolean).join(' · ') || '—'}</dd>
+        <dt>Spiders</dt>
+        <dd style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5 }}>{domainSpiderPattern(f)}</dd>
       </dl>
     </div>
   );
