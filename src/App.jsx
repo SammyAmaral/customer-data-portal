@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { LogOut, LayoutGrid, FileText, Wrench, Menu, ChevronRight, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LogOut, LayoutGrid, FileText, Wrench, Menu, ChevronRight, PanelLeftClose, PanelLeftOpen, Activity } from 'lucide-react';
 import { getSession, onAuthChange, signOut, isConfigured } from './lib/auth.js';
 import { useHashRoute, navigate } from './lib/router.js';
 import { ToastProvider } from './lib/toast.jsx';
 import { ChromeProvider, useChrome } from './lib/chrome.jsx';
 import SignIn from './views/SignIn.jsx';
 import Portfolio from './views/Portfolio.jsx';
+import Operations from './views/Operations.jsx';
 import Report from './views/Report.jsx';
 import TechView from './views/TechView.jsx';
 import SchemaView from './views/SchemaView.jsx';
@@ -78,6 +79,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   useEffect(() => {
     let t = `Portfolio · ${APP_NAME}`;
     if (!signedIn) t = `Sign in · ${APP_NAME}`;
+    else if (route.name === 'operations') t = `Operation Status · ${APP_NAME}`;
     else if (route.name === 'report') t = `${engLabel} · Status · ${APP_NAME}`;
     else if (route.name === 'tech') t = `${engLabel} · Technical · ${APP_NAME}`;
     else if (route.name === 'tech-schema') t = `${engLabel} · Schema · ${APP_NAME}`;
@@ -97,6 +99,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   else if (route.name === 'schema-doc') body = <SchemaDoc epicKey={route.key} feedKey={route.feed} />;
   else if (route.name === 'qa') body = <QAReport epicKey={route.key} />;
   else if (route.name === 'change') body = <ChangeRequest epicKey={route.key} email={email} />;
+  else if (route.name === 'operations') body = <Operations />;
   else body = <Portfolio />;
 
   const initial = (email || '?').trim().charAt(0).toUpperCase();
@@ -117,6 +120,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
 
         <nav className="cdp-nav" aria-label="Primary">
           <NavItem icon={<LayoutGrid size={17} />} label="Portfolio" active={route.name === 'portfolio'} onClick={() => navigate('')} />
+          <NavItem icon={<Activity size={17} />} label="Operation Status" active={route.name === 'operations'} onClick={() => navigate('#/operations')} />
           {engOpen && (
             <div className="cdp-navgroup">
               <div className="gt" title={engLabel}>{engLabel}</div>
@@ -150,6 +154,9 @@ function Shell({ ready, session, route, email, onSignOut }) {
           </button>
           <nav className="cdp-crumbs" aria-label="Breadcrumb">
             <button onClick={() => navigate('')}>Portfolio</button>
+            {route.name === 'operations' && (
+              <><ChevronRight size={14} className="sep" /><span className="cur">Operation Status</span></>
+            )}
             {engOpen && (
               <>
                 <ChevronRight size={14} className="sep" />
@@ -472,6 +479,17 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-th-sort{cursor:pointer;user-select:none;white-space:nowrap;}
 .cdp-th-sort:hover{background:var(--navy);}
 .cdp-sortcaret{margin-left:5px;font-size:9px;opacity:.9;}
+
+/* ---- operation status board ---- */
+.cdp-opshealth{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
+.cdp-opshealth .cdp-chip{display:inline-flex;align-items:center;gap:7px;}
+.cdp-opshealth .cdp-chip .n{font-size:11px;opacity:.65;font-weight:700;}
+.cdp-light{display:inline-block;width:11px;height:11px;border-radius:50%;vertical-align:middle;box-shadow:0 0 0 3px rgba(0,0,0,.04);flex:0 0 auto;}
+.cdp-light.live{animation:cdpPulse 1.9s ease-in-out infinite;}
+@keyframes cdpPulse{0%,100%{box-shadow:0 0 0 0 rgba(14,156,120,.5);}50%{box-shadow:0 0 0 6px rgba(14,156,120,0);}}
+.cdp-fd{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;border-radius:6px;padding:2px 7px;color:#7A531A;background:#FFF1D6;white-space:nowrap;}
+.cdp-fd.urgent{color:#fff;background:var(--rag-red);}
+@media(prefers-reduced-motion:reduce){ .cdp-light.live{animation:none;} }
 
 /* ---- skeletons ---- */
 .cdp-sk{display:inline-block;position:relative;overflow:hidden;background:var(--line);border-radius:8px;vertical-align:middle;}
