@@ -1,111 +1,109 @@
 /* =========================================================================
-   QAReport — a visual Quality-Assurance validation report for an engagement's
-   data feeds (#/qa/{KEY}). A confidence artifact for customers: does the data
-   Zyte delivers pass validation?
+   QAReport — a live QA / SLA report for an engagement (#/qa/{KEY}), built on
+   Zyte's service-level metrics: actual vs target, per domain and aggregated.
 
-   Data policy: real signals are used where the customer-safe /api/epic payload
-   provides them (feed status, records, recent volume, sample-approved date,
-   crawl-job health + errors). The detailed validation checks, field-level
-   coverage and sample rows are REPRESENTATIVE (clearly labelled) — this is the
-   visual template for QA reporting, derived deterministically per feed so it's
-   stable, until the QA pipeline emits real per-run validation results.
+   Three live filters: multi-select Domain dropdown, a domain search (filters
+   the whole report), and a start/end date range (the reporting period).
+
+   Data policy: the SLA targets are Zyte's proposed service levels; the ACTUALS
+   are REPRESENTATIVE (clearly labelled), derived deterministically per
+   (domain, period) so they're stable and respond to the filters — until the
+   live QA/SLA pipeline emits real per-run results.
    ========================================================================= */
-import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Printer, ShieldCheck, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Printer, ShieldCheck, CheckCircle2, AlertTriangle, XCircle, Search, Calendar } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
-import { fmtMoney, fmtDate, feedItems, cx } from '../lib/ui.js';
-import { PieChart } from '../components/charts.jsx';
+import { fmtDate, cx } from '../lib/ui.js';
+import { SortHeader, useSort, sortRows } from '../components/SortHeader.jsx';
 import AccessDenied from './AccessDenied.jsx';
 
-/* ---- deterministic pseudo-metrics (stable per feed, no randomness) ------- */
-function hash(str) {
-  let h = 2166136261;
-  for (let i = 0; i < String(str).length; i++) { h ^= String(str).charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-const span = (seed, lo, hi) => lo + (seed % (hi - lo + 1));
-const RAG = { pass: 'var(--rag-green)', warn: 'var(--rag-amber)', fail: 'var(--rag-red)' };
-const gradeOf = (score, unhealthy) => (unhealthy || score < 75 ? 'fail' : score < 90 ? 'warn' : 'pass');
-
-// Representative product-schema field coverage (illustrative), varied per feed.
-const SCHEMA_FIELDS = ['url', 'name', 'brand', 'price', 'currency', 'sku', 'availability', 'image', 'rating', 'review_count'];
-const REQUIRED_FIELDS = new Set(['url', 'name', 'price', 'currency']);
-const SAMPLE_ROWS = [
-  { name: 'Hidratante Corporal Nativa SPA', brand: 'O Boticário', price: '49.90', availability: 'in_stock' },
-  { name: 'Perfume Malbec 100ml', brand: 'O Boticário', price: '189.90', availability: 'in_stock' },
-  { name: 'Kit Cuidados Nativa SPA Quinoa', brand: 'natura', price: '129.90', availability: 'out_of_stock' },
-  { name: 'Batom Matte Intense', brand: 'Quem disse, Berenice?', price: '39.90', availability: 'in_stock' },
-  { name: 'Shampoo Lumina Reparação', brand: 'natura', price: '54.90', availability: 'in_stock' },
+/* ---- Zyte service-level metrics ----------------------------------------- */
+const METRICS = [
+  { key: 'coverage',     label: 'Coverage per run',          def: 'Items retrieved ÷ items expected, measured per site',       target: '≥ 98%',         good: 'gte', t: 98,   warn: 96,  fmt: (v) => `${v.toFixed(1)}%` },
+  { key: 'accuracy',     label: 'Field-level accuracy',       def: 'Match against agreed reference set, core fields',           target: '≥ 99%',         good: 'gte', t: 99,   warn: 97,  fmt: (v) => `${v.toFixed(1)}%` },
+  { key: 'ontime',       label: 'On-time delivery',           def: 'Runs landing inside the agreed window',                     target: '100%',          good: 'gte', t: 100,  warn: 98,  fmt: (v) => `${v.toFixed(1)}%` },
+  { key: 'schema',       label: 'Schema validity',            def: 'Records passing type, format and required-field checks',    target: '≥ 99.9%',       good: 'gte', t: 99.9, warn: 99,  fmt: (v) => `${v.toFixed(2)}%` },
+  { key: 'detect',       label: 'Time to detect',             def: 'Breakage flagged from a broken parser or blocked site',     target: '< 1 run cycle', good: 'lt',  t: 1,    warn: 1.5, agg: 'max', fmt: (v) => `${v.toFixed(1)} cycles` },
+  { key: 'response',     label: 'Time to first response',     def: 'A human acknowledges and owns the incident',               target: '< 24 h',        good: 'lt',  t: 24,   warn: 36,  agg: 'max', fmt: (v) => `${Math.round(v)} h` },
+  { key: 'restoreCrit',  label: 'Time to restore — critical', def: 'Data flowing correctly again on a revenue-critical domain', target: '< 2 days',      good: 'lt',  t: 2,    warn: 3,   agg: 'max', fmt: (v) => `${v.toFixed(1)} days` },
+  { key: 'restoreOther', label: 'Time to restore — other',    def: 'Data flowing correctly again on remaining domains',         target: '< 5 days',      good: 'lt',  t: 5,    warn: 7,   agg: 'max', fmt: (v) => `${v.toFixed(1)} days` },
+  { key: 'selfReported', label: 'Self-reported incidents',    def: 'Issues we raise vs. issues you find first',                 target: '100% ours',     good: 'gte', t: 99.5, warn: 90,  fmt: (v) => `${v.toFixed(0)}% ours` },
 ];
 
-function feedQA(f) {
-  const seed = hash(f.key || f.name || 'x');
-  const unhealthy = !!(f.jobState && !f.jobHealthy);
-  const conformance = span(seed, 92, 100);
-  const completeness = span(seed >> 3, 86, 99);
-  const typeValidity = span(seed >> 5, 95, 100);
-  const dupRate = span(seed >> 7, 0, 3);
-  const freshDays = f.jobFinished ? null : span(seed >> 9, 0, 6);
-  const banHealth = unhealthy ? 60 : span(seed >> 11, 90, 100);
-  // Weighted score, nudged down by real problems.
-  let score = Math.round(conformance * 0.25 + completeness * 0.3 + typeValidity * 0.2 + (100 - dupRate * 6) * 0.1 + banHealth * 0.15);
-  if (f.jobErrors) score -= Math.min(12, f.jobErrors);
-  if (unhealthy) score -= 15;
-  score = Math.max(0, Math.min(100, score));
-  return { seed, unhealthy, conformance, completeness, typeValidity, dupRate, freshDays, banHealth, score, grade: gradeOf(score, unhealthy) };
+function statusFor(m, v) {
+  if (v == null || Number.isNaN(v)) return 'na';
+  if (m.good === 'gte') return v >= m.t ? 'pass' : v >= m.warn ? 'warn' : 'fail';
+  return v < m.t ? 'pass' : v < m.warn ? 'warn' : 'fail';
 }
 
-/* ---- rule definitions (aggregate view) ---------------------------------- */
-const RULE_DEFS = [
-  { key: 'conformance', label: 'Schema conformance', desc: 'Records match the agreed schema (no unexpected or missing fields).' },
-  { key: 'completeness', label: 'Required-field completeness', desc: 'Required fields are populated on every record.' },
-  { key: 'typeValidity', label: 'Type & format validity', desc: 'Prices are numeric, URLs well-formed, dates ISO-8601, etc.' },
-  { key: 'dupRate', label: 'Duplicate rate', desc: 'Share of duplicate records after de-duplication.' },
-  { key: 'freshness', label: 'Freshness & volume', desc: 'Latest crawl is recent and volume is within the expected band.' },
-  { key: 'banHealth', label: 'Anti-bot / ban health', desc: 'Crawl completed without bans, blocks or elevated error rates.' },
-];
-
-function ruleStatus(key, qas, feeds) {
-  if (key === 'dupRate') { const m = Math.max(...qas.map((q) => q.dupRate)); return { grade: m <= 1 ? 'pass' : m <= 3 ? 'warn' : 'fail', metric: `${m}% max` }; }
-  if (key === 'freshness') {
-    const stale = feeds.filter((f) => f.jobState && !f.jobHealthy).length;
-    const grade = stale === 0 ? 'pass' : stale <= 1 ? 'warn' : 'fail';
-    return { grade, metric: stale ? `${stale} feed${stale > 1 ? 's' : ''} behind` : 'all current' };
-  }
-  if (key === 'banHealth') { const m = Math.min(...qas.map((q) => q.banHealth)); return { grade: m >= 95 ? 'pass' : m >= 80 ? 'warn' : 'fail', metric: `${m}% min` }; }
-  // percentage-style rules
-  const m = Math.min(...qas.map((q) => q[key]));
-  return { grade: m >= 95 ? 'pass' : m >= 85 ? 'warn' : 'fail', metric: `${m}% min` };
+/* ---- deterministic representative actuals (per domain, per period) ------- */
+function hash(s) { let h = 2166136261; for (let i = 0; i < String(s).length; i++) { h ^= String(s).charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+function domainMetrics(key, seed) {
+  const h = hash(`${key}|${seed}`);
+  const pick = (shift, lo, hi) => lo + ((h >>> shift) % (Math.round((hi - lo) * 10) + 1)) / 10;
+  return {
+    coverage: clamp(pick(0, 96.5, 100), 0, 100),
+    accuracy: clamp(pick(3, 98.2, 100), 0, 100),
+    ontime: clamp(pick(6, 96, 100), 0, 100),
+    schema: clamp(pick(9, 99.8, 100), 0, 100),
+    detect: pick(12, 0.1, 1.4),
+    response: pick(15, 3, 30),
+    restoreCrit: pick(18, 0.5, 2.8),
+    restoreOther: pick(21, 1, 5.8),
+    selfReported: clamp(pick(24, 96, 100), 0, 100),
+    incidents: (h >>> 27) % 4,
+  };
+}
+function domainStatus(dm) {
+  const grades = METRICS.map((m) => statusFor(m, dm[m.key]));
+  return grades.includes('fail') ? 'fail' : grades.includes('warn') ? 'warn' : 'pass';
+}
+// Aggregate a metric across the shown domains: max for durations, avg otherwise.
+function aggregate(list, m) {
+  if (!list.length) return null;
+  const vals = list.map((d) => d[m.key]);
+  return m.agg === 'max' ? Math.max(...vals) : vals.reduce((s, v) => s + v, 0) / vals.length;
 }
 
-const GRADE_ICON = { pass: CheckCircle2, warn: AlertTriangle, fail: XCircle };
+const STATUS_RANK = { pass: 0, warn: 1, fail: 2, na: 3 };
+const DOMAIN_COLS = {
+  name: { get: (r) => r.f.name, kind: 'str' },
+  coverage: { get: (r) => r.m.coverage, kind: 'num' },
+  accuracy: { get: (r) => r.m.accuracy, kind: 'num' },
+  schema: { get: (r) => r.m.schema, kind: 'num' },
+  ontime: { get: (r) => r.m.ontime, kind: 'num' },
+  incidents: { get: (r) => r.m.incidents, kind: 'num' },
+  status: { get: (r) => STATUS_RANK[domainStatus(r.m)] ?? 9, kind: 'num' },
+};
+
+const GRADE_ICON = { pass: CheckCircle2, warn: AlertTriangle, fail: XCircle, na: AlertTriangle };
 function GradeChip({ grade, children }) {
-  const Icon = GRADE_ICON[grade];
-  return <span className={cx('cdp-qagrade', grade)}><Icon size={13} />{children || grade}</span>;
+  const Icon = GRADE_ICON[grade] || AlertTriangle;
+  return <span className={cx('cdp-qagrade', grade)}><Icon size={13} />{children || (grade === 'na' ? 'No data' : grade)}</span>;
 }
+
+const isoDay = (d) => d.toISOString().slice(0, 10);
 
 export default function QAReport({ epicKey }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [q, setQ] = useState('');
+  const [domainSel, setDomainSel] = useState(() => new Set());
+  const [start, setStart] = useState(() => isoDay(new Date(Date.now() - 30 * 864e5)));
+  const [end, setEnd] = useState(() => isoDay(new Date()));
+  const { sort, onSort } = useSort({ key: 'status', dir: 'desc' }); // worst-first
   const { setEngagement } = useChrome();
 
   useEffect(() => {
-    let alive = true;
-    setData(null); setError(null);
+    let alive = true; setData(null); setError(null);
     fetchWithAuth(`/api/epic?key=${encodeURIComponent(epicKey)}`)
-      .then((d) => alive && setData(d))
-      .catch((e) => alive && setError(e));
+      .then((d) => alive && setData(d)).catch((e) => alive && setError(e));
     return () => { alive = false; };
   }, [epicKey]);
-
-  useEffect(() => {
-    if (data) setEngagement({ key: data.key, customer: data.customer, internal: !!data.internal });
-  }, [data, setEngagement]);
-
-  const feeds = (data && data.feeds) || [];
-  const qas = useMemo(() => feeds.map((f) => ({ f, qa: feedQA(f) })), [feeds]);
+  useEffect(() => { if (data) setEngagement({ key: data.key, customer: data.customer, internal: !!data.internal }); }, [data, setEngagement]);
 
   if (error && error.status === 403) return <AccessDenied message={error.message} />;
   if (error) {
@@ -116,29 +114,29 @@ export default function QAReport({ epicKey }) {
   }
   if (!data) return <div className="cdp-center"><div className="cdp-spinner" /></div>;
 
-  const qaList = qas.map((x) => x.qa);
-  const overall = qaList.length ? Math.round(qaList.reduce((s, q) => s + q.score, 0) / qaList.length) : 0;
-  const counts = { pass: 0, warn: 0, fail: 0 };
-  qaList.forEach((q) => { counts[q.grade]++; });
-  const overallGrade = counts.fail ? 'fail' : counts.warn ? 'warn' : 'pass';
-  const rules = RULE_DEFS.map((r) => ({ ...r, ...ruleStatus(r.key, qaList, feeds) }));
-  const rulesPassed = rules.filter((r) => r.grade === 'pass').length;
+  const feeds = data.feeds || [];
+  const domainOptions = [...new Set(feeds.map((f) => f.name))].sort((a, b) => a.localeCompare(b));
+  const needle = q.trim().toLowerCase();
+  const period = start.slice(0, 7); // seeds representative actuals; shifts with the range
 
-  // Representative field coverage, seeded off the whole engagement so it's stable.
-  const eseed = hash(data.key);
-  const coverage = SCHEMA_FIELDS.map((name, i) => ({
-    name,
-    required: REQUIRED_FIELDS.has(name),
-    pct: REQUIRED_FIELDS.has(name) ? span(eseed >> i, 97, 100) : span(eseed >> (i + 3), 62, 99),
-  }));
+  const shown = feeds
+    .filter((f) => domainSel.size === 0 || domainSel.has(f.name))
+    .filter((f) => !needle || (f.name || '').toLowerCase().includes(needle))
+    .map((f) => ({ f, m: domainMetrics(f.key || f.name, period) }));
 
-  // Anomalies: real crawl-job signals first, then a representative validation note.
-  const anomalies = [];
-  qas.forEach(({ f, qa }) => {
-    if (qa.unhealthy) anomalies.push({ level: 'fail', feed: f.name, text: `Last crawl ended with “${f.jobCloseReason || 'issues'}” — records held back from delivery.` });
-    else if (f.jobErrors) anomalies.push({ level: 'warn', feed: f.name, text: `${f.jobErrors} error${f.jobErrors > 1 ? 's' : ''} logged in the latest run.` });
-    else if (qa.dupRate >= 2) anomalies.push({ level: 'warn', feed: f.name, text: `${qa.dupRate}% duplicate records removed before delivery (representative).` });
-  });
+  const overall = {};
+  METRICS.forEach((m) => { overall[m.key] = aggregate(shown.map((x) => x.m), m); });
+  const metricGrades = METRICS.map((m) => statusFor(m, overall[m.key]));
+  const onTarget = metricGrades.filter((g) => g === 'pass').length;
+  const measured = metricGrades.filter((g) => g !== 'na').length;
+  const verdict = metricGrades.includes('fail') ? 'fail' : metricGrades.includes('warn') ? 'warn' : (measured ? 'pass' : 'na');
+  const openIncidents = shown.reduce((s, x) => s + (x.m.incidents || 0), 0);
+
+  const rows = sortRows(shown, sort, DOMAIN_COLS);
+  const filtersActive = !!needle || domainSel.size > 0;
+  const toggleDomain = (d) => setDomainSel((prev) => { const n = new Set(prev); if (n.has(d)) n.delete(d); else n.add(d); return n; });
+  const clearFilters = () => { setQ(''); setDomainSel(new Set()); setStart(isoDay(new Date(Date.now() - 30 * 864e5))); setEnd(isoDay(new Date())); };
+  const periodLabel = `${fmtDate(start)} – ${fmtDate(end)}`;
 
   return (
     <div className="cdp-wrap cdp-qa">
@@ -148,8 +146,8 @@ export default function QAReport({ epicKey }) {
         <div className="rh-top">
           <div>
             <div className="cdp-eyebrow" style={{ color: '#9FC0FF' }}>{data.customer} · Quality Assurance</div>
-            <h1><ShieldCheck size={22} style={{ verticalAlign: '-4px', marginRight: 8 }} />Data QA validation report</h1>
-            <div className="cust">{data.key} · {feeds.length} feed{feeds.length === 1 ? '' : 's'} validated</div>
+            <h1><ShieldCheck size={22} style={{ verticalAlign: '-4px', marginRight: 8 }} />QA &amp; SLA report</h1>
+            <div className="cust">{data.key} · actuals vs Zyte service levels · {periodLabel}</div>
           </div>
           <div className="cdp-actions" style={{ margin: 0 }}>
             <button className="cdp-btn cdp-btn-ghost" onClick={() => window.print()}><Printer size={15} /> Save / print</button>
@@ -157,111 +155,98 @@ export default function QAReport({ epicKey }) {
         </div>
       </section>
 
-      <div className="cdp-note" style={{ marginTop: 12 }}>
-        Crawl health, volumes and approval dates are live from this engagement. Field-level validation checks and the
-        sample below are <b>representative</b> — the visual template QA results will populate as the validation pipeline runs.
+      {/* ---- live filters ---- */}
+      <div className="cdp-feedfilters" style={{ marginTop: 16 }}>
+        <div className="cdp-search">
+          <Search size={16} style={{ color: 'var(--slate)' }} />
+          <input placeholder="Search domain…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search domains" />
+        </div>
+        {domainOptions.length > 1 && (
+          <DomainDropdown options={domainOptions} selected={domainSel} onToggle={toggleDomain} onClear={() => setDomainSel(new Set())} />
+        )}
+        <span className="cdp-daterange">
+          <Calendar size={15} style={{ color: 'var(--slate)' }} />
+          <input type="date" className="cdp-dateinput" value={start} max={end} onChange={(e) => setStart(e.target.value)} aria-label="Start date" />
+          <span className="sep">→</span>
+          <input type="date" className="cdp-dateinput" value={end} min={start} onChange={(e) => setEnd(e.target.value)} aria-label="End date" />
+        </span>
+        <span className="cdp-feedcount">{shown.length} of {feeds.length} domains</span>
+        {filtersActive && <button className="cdp-linkbtn" onClick={clearFilters}>Clear</button>}
       </div>
 
       {feeds.length === 0 ? (
-        <div className="cdp-emptystate" style={{ marginTop: 24 }}><h3>No feeds to validate</h3><p>This engagement has no data feeds yet.</p></div>
+        <div className="cdp-emptystate" style={{ marginTop: 8 }}><h3>No domains to report</h3><p>This engagement has no data feeds yet.</p></div>
+      ) : shown.length === 0 ? (
+        <div className="cdp-emptystate" style={{ marginTop: 8 }}><h3>No domains match</h3><p>Try clearing a filter.</p></div>
       ) : (
         <>
-          {/* ---- overall verdict ---- */}
-          <div className="cdp-qa-verdict" style={{ marginTop: 16 }}>
-            <div className={cx('cdp-qa-score', overallGrade)}>
-              <div className="n">{overall}</div>
-              <div className="l">QA score</div>
+          {/* ---- verdict band ---- */}
+          <div className="cdp-qa-verdict">
+            <div className={cx('cdp-qa-score', verdict)}>
+              <div className="n" style={{ fontSize: 30 }}>{onTarget}/{METRICS.length}</div>
+              <div className="l">on target</div>
             </div>
             <div className="cdp-qa-verdict-body">
-              <GradeChip grade={overallGrade}>{overallGrade === 'pass' ? 'Passing' : overallGrade === 'warn' ? 'Passing with warnings' : 'Attention needed'}</GradeChip>
+              <GradeChip grade={verdict}>{verdict === 'pass' ? 'Meeting SLAs' : verdict === 'warn' ? 'Watch — some at risk' : verdict === 'fail' ? 'SLA breach' : 'No data'}</GradeChip>
               <div className="cdp-qa-tally">
-                <span><b style={{ color: RAG.pass }}>{counts.pass}</b> passing</span>
-                <span><b style={{ color: RAG.warn }}>{counts.warn}</b> warnings</span>
-                <span><b style={{ color: RAG.fail }}>{counts.fail}</b> failing</span>
-                <span><b>{rulesPassed}/{rules.length}</b> checks passed</span>
+                <span><b>{shown.length}</b> domain{shown.length === 1 ? '' : 's'}</span>
+                <span><b>{openIncidents}</b> open incident{openIncidents === 1 ? '' : 's'}</span>
+                <span>{periodLabel}</span>
+                <span className="cdp-qa-live"><span className="cdp-light live" style={{ background: 'var(--rag-green)' }} /> live</span>
               </div>
             </div>
           </div>
 
-          {/* ---- validation checklist ---- */}
+          {/* ---- SLA scorecard ---- */}
           <div className="cdp-panel" style={{ marginTop: 16 }}>
-            <h4>Validation checks</h4>
-            <div className="cdp-qa-rules">
-              {rules.map((r) => (
-                <div key={r.key} className={cx('cdp-qa-rule', r.grade)}>
-                  <div className="top"><GradeChip grade={r.grade} /><span className="metric">{r.metric}</span></div>
-                  <div className="name">{r.label}</div>
-                  <div className="desc">{r.desc}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ---- per-feed scorecard + coverage ---- */}
-          <div className="cdp-qa-split" style={{ marginTop: 16 }}>
-            <div className="cdp-panel">
-              <h4>Feed scorecard</h4>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="cdp-table">
-                  <thead><tr><th>Feed</th><th>Status</th><th>Records</th><th>Approved</th><th className="center">Score</th><th>Verdict</th></tr></thead>
-                  <tbody>
-                    {qas.map(({ f, qa }) => (
-                      <tr key={f.key}>
-                        <td className="cdp-feedname">{f.name}</td>
-                        <td style={{ fontSize: 12, color: 'var(--slate)' }}>{f.status}</td>
-                        <td className="center">{feedItems(f) != null ? fmtMoney(feedItems(f)) : '—'}</td>
-                        <td className="center">{f.sampleApproved ? fmtDate(f.sampleApproved) : '—'}</td>
-                        <td className="center" style={{ fontWeight: 700 }}>{qa.score}</td>
-                        <td><GradeChip grade={qa.grade} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="cdp-panel">
-              <h4>Verdict mix</h4>
-              <PieChart
-                title="Feed QA verdicts"
-                data={[
-                  { label: 'Passing', value: counts.pass, color: RAG.pass },
-                  { label: 'Warnings', value: counts.warn, color: RAG.warn },
-                  { label: 'Failing', value: counts.fail, color: RAG.fail },
-                ]}
-              />
-            </div>
-          </div>
-
-          {/* ---- field coverage (representative) ---- */}
-          <div className="cdp-panel" style={{ marginTop: 16 }}>
-            <h4>Required-field completeness <span className="cdp-tag">representative</span></h4>
-            <div className="cdp-coverage">
-              {coverage.map((fld) => (
-                <div className="cdp-cov-row" key={fld.name}>
-                  <span className="cdp-cov-name" title={fld.name}>{fld.name}{fld.required && <span className="cdp-req" style={{ marginLeft: 6 }}>req</span>}</span>
-                  <span className="cdp-cov-track"><span className="cdp-cov-fill" style={{ width: `${fld.pct}%`, background: fld.pct >= 95 ? 'var(--rag-green)' : fld.pct >= 80 ? 'var(--rag-amber)' : 'var(--rag-red)' }} /></span>
-                  <span className="cdp-cov-pct">{fld.pct}%</span>
-                  <span className="cdp-cov-count">{fld.required ? 'required' : 'optional'}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ---- sample records preview (representative) ---- */}
-          <div className="cdp-panel" style={{ marginTop: 16 }}>
-            <h4>Validated sample <span className="cdp-tag">representative</span></h4>
+            <h4>Service levels <span className="cdp-insight-note">· actual vs Zyte target</span></h4>
             <div style={{ overflowX: 'auto' }}>
               <table className="cdp-schematable">
-                <thead><tr><th>name</th><th>brand</th><th>price</th><th>availability</th><th className="center">valid</th></tr></thead>
+                <thead><tr><th>Metric</th><th>Definition</th><th>Target</th><th>Actual</th><th>Status</th></tr></thead>
                 <tbody>
-                  {SAMPLE_ROWS.map((r, i) => (
-                    <tr key={i}>
-                      <td className="cdp-cov-name" style={{ maxWidth: 240 }}>{r.name}</td>
-                      <td>{r.brand}</td>
-                      <td>{r.price}</td>
-                      <td><span className="cdp-type">{r.availability}</span></td>
-                      <td className="center"><CheckCircle2 size={15} style={{ color: 'var(--rag-green)' }} /></td>
+                  {METRICS.map((m) => {
+                    const v = overall[m.key];
+                    return (
+                      <tr key={m.key}>
+                        <td className="cdp-cov-name">{m.label}</td>
+                        <td style={{ color: '#33415A' }}>{m.def}</td>
+                        <td><span className="cdp-type">{m.target}</span></td>
+                        <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{v == null ? '—' : m.fmt(v)}</td>
+                        <td><GradeChip grade={statusFor(m, v)} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ---- per-domain breakdown ---- */}
+          <div className="cdp-panel" style={{ marginTop: 16 }}>
+            <h4>By domain <span className="cdp-insight-note">· {shown.length} shown</span></h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table className="cdp-table">
+                <thead>
+                  <tr>
+                    <SortHeader col="name" label="Domain" sort={sort} onSort={onSort} />
+                    <SortHeader col="coverage" label="Coverage" sort={sort} onSort={onSort} />
+                    <SortHeader col="accuracy" label="Field accuracy" sort={sort} onSort={onSort} />
+                    <SortHeader col="schema" label="Schema" sort={sort} onSort={onSort} />
+                    <SortHeader col="ontime" label="On-time" sort={sort} onSort={onSort} />
+                    <SortHeader col="incidents" label="Incidents" sort={sort} onSort={onSort} />
+                    <SortHeader col="status" label="Status" sort={sort} onSort={onSort} />
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ f, m }) => (
+                    <tr key={f.key}>
+                      <td className="cdp-feedname">{f.name}</td>
+                      <td className="center"><Cell v={m.coverage} g={statusFor(METRICS[0], m.coverage)} suffix="%" /></td>
+                      <td className="center"><Cell v={m.accuracy} g={statusFor(METRICS[1], m.accuracy)} suffix="%" /></td>
+                      <td className="center"><Cell v={m.schema} g={statusFor(METRICS[3], m.schema)} suffix="%" dp={2} /></td>
+                      <td className="center"><Cell v={m.ontime} g={statusFor(METRICS[2], m.ontime)} suffix="%" /></td>
+                      <td className="center" style={{ color: m.incidents ? 'var(--rag-red)' : 'inherit', fontWeight: m.incidents ? 700 : 400 }}>{m.incidents || '—'}</td>
+                      <td><GradeChip grade={domainStatus(m)} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -269,23 +254,49 @@ export default function QAReport({ epicKey }) {
             </div>
           </div>
 
-          {/* ---- anomalies ---- */}
-          <div className="cdp-panel" style={{ marginTop: 16 }}>
-            <h4>Anomalies & notes</h4>
-            {anomalies.length === 0 ? (
-              <div className="cdp-qa-clean"><CheckCircle2 size={16} /> No anomalies detected — all feeds passed validation cleanly.</div>
-            ) : (
-              <ul className="cdp-qa-anoms">
-                {anomalies.map((a, i) => (
-                  <li key={i} className={a.level}>
-                    {a.level === 'fail' ? <XCircle size={15} /> : <AlertTriangle size={15} />}
-                    <span><b>{a.feed}</b> — {a.text}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          <div className="cdp-note" style={{ marginTop: 12 }}>
+            Targets are Zyte’s proposed service levels. Actual figures are <b>representative</b> for this period —
+            the live QA/SLA pipeline will replace them per run.
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+function Cell({ v, g, suffix = '', dp = 1 }) {
+  const color = g === 'pass' ? 'var(--rag-green)' : g === 'warn' ? 'var(--rag-amber)' : g === 'fail' ? 'var(--rag-red)' : 'var(--slate)';
+  return <span style={{ fontWeight: 700, color }}>{v == null ? '—' : `${v.toFixed(dp)}${suffix}`}</span>;
+}
+
+// Multi-select domain filter (checkbox list; closes on outside/Esc).
+function DomainDropdown({ options, selected, onToggle, onClear }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    window.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); window.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const label = selected.size === 0 ? 'All domains' : `${selected.size} selected`;
+  return (
+    <div className="cdp-msel" ref={ref}>
+      <button type="button" className="cdp-select cdp-msel-btn" onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open}>
+        Domain: {label}
+      </button>
+      {open && (
+        <div className="cdp-msel-pop" role="listbox" aria-multiselectable="true">
+          {options.map((o) => (
+            <label key={o} className="cdp-msel-opt">
+              <input type="checkbox" checked={selected.has(o)} onChange={() => onToggle(o)} />
+              <span className="lb">{o}</span>
+            </label>
+          ))}
+          {selected.size > 0 && <button type="button" className="cdp-msel-clear" onClick={onClear}>Clear selection</button>}
+        </div>
       )}
     </div>
   );

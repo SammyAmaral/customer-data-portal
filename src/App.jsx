@@ -483,6 +483,13 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-th-sort:hover{background:var(--navy);}
 .cdp-sortcaret{margin-left:5px;font-size:9px;opacity:.9;}
 
+/* ---- QA report: date range + live tag ---- */
+.cdp-daterange{display:inline-flex;align-items:center;gap:6px;color:var(--slate);font-size:12.5px;}
+.cdp-daterange .sep{color:var(--slate);}
+.cdp-dateinput{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-family:'Inter',sans-serif;font-size:12.5px;color:var(--ink);background:#fff;outline:0;}
+.cdp-dateinput:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(47,111,237,.12);}
+.cdp-qa-live{display:inline-flex;align-items:center;gap:6px;}
+
 /* ---- operation status board ---- */
 .cdp-opshealth{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}
 .cdp-opshealth .cdp-chip{display:inline-flex;align-items:center;gap:7px;}
