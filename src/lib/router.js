@@ -16,7 +16,8 @@ export function parseHash() {
   if (sd) return { name: 'schema-doc', key: sd[1].toUpperCase(), feed: sd[2].toUpperCase() };
   const qa = h.match(/^\/qa\/([A-Za-z][A-Za-z0-9]+-\d+)/);
   if (qa) return { name: 'qa', key: qa[1].toUpperCase() };
-  if (/^\/operations\/?$/.test(h)) return { name: 'operations' };
+  const op = h.match(/^\/operations(?:\/([A-Za-z][A-Za-z0-9]+-\d+))?\/?$/);
+  if (op) return { name: 'operations', key: op[1] ? op[1].toUpperCase() : null };
   return { name: 'portfolio' };
 }
 

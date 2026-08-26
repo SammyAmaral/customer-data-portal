@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck, Search } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck, Search, Activity } from 'lucide-react';
 import { fetchWithAuth, postWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { fmtDate, fmtMoney, ragToken, statusToken, feedItems, deliveryPhaseLabel, cx, isNotStarted } from '../lib/ui.js';
@@ -117,6 +117,9 @@ export default function Report({ epicKey, email }) {
           <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/qa/${data.key}`)}><ShieldCheck size={15} /> QA report</button>
           {data.internal && (
             <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/tech/${data.key}`)}><Wrench size={15} /> Technical view</button>
+          )}
+          {data.internal && (
+            <button className="cdp-btn cdp-btn-ghost" onClick={() => navigate(`#/operations/${data.key}`)}><Activity size={15} /> Operation Status</button>
           )}
           {data.internal && data.webUrl && (
             <a className="cdp-btn cdp-btn-ghost" href={data.webUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Open in Jira</a>

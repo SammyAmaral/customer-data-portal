@@ -13,8 +13,8 @@
    (3) pull each domain's sub-crawlers, (4) enrich grouped BY EPIC, (5) roll up
    + compute health. Bounded + reuses the hourly scrapy_jobs cache.
    ========================================================================= */
-import { getUserScope, requireJira, fetchIssues, PROJECT } from './_access.js';
-import { CF, FEED_FIELDS, mapFeed, parseZyteId, customerName } from './_map.js';
+import { getUserScope, requireJira, fetchIssues, fetchIssue, PROJECT } from './_access.js';
+import { CF, FEED_FIELDS, mapFeed, parseZyteId, customerName, cleanText } from './_map.js';
 import { enrichFeeds } from './scrapy.js';
 
 const MAX_CRAWLERS = 250; // safety bound on how many Done crawlers we enrich
@@ -53,16 +53,30 @@ export default async function handler(req, res) {
   if (!scope.internal) { res.status(403).json({ error: 'Operation Status is internal-only.' }); return; }
   if (!requireJira(res)) return;
 
+  // Optional ?key=DOD-#### scopes the board to ONE engagement (shareable link);
+  // no key = the whole portfolio (kept for later, not surfaced in the UI yet).
+  const key = String((req.query && req.query.key) || '').toUpperCase().trim();
+  if (key && !/^[A-Z][A-Z0-9]+-\d+$/.test(key)) { res.status(400).json({ error: 'Invalid engagement key.' }); return; }
+
   const asOf = new Date().toISOString();
   try {
-    // 1. Every Done crawling-component across the DOD project.
+    // Engagement header for the scoped view (so an empty board still names the customer).
+    let engagement = null;
+    if (key) {
+      try {
+        const ep = await fetchIssue(key, { fields: ['summary', 'issuetype', CF.customer] });
+        if (ep && ep.fields) engagement = { key, customer: customerName(ep), name: cleanText(ep.fields.summary) };
+      } catch { /* ignore */ }
+    }
+
+    // 1. Done crawling-components — scoped to the engagement when a key is given.
     let doneRaw = await fetchIssues({
-      jql: `project = "${PROJECT}" AND issuetype = "Crawling-Component" AND statusCategory = Done ORDER BY updated DESC`,
+      jql: `project = "${PROJECT}" AND issuetype = "Crawling-Component" AND statusCategory = Done${key ? ` AND parent = ${key}` : ''} ORDER BY updated DESC`,
       fields: [...FEED_FIELDS, 'parent'],
     });
     const truncated = doneRaw.length > MAX_CRAWLERS;
     doneRaw = doneRaw.slice(0, MAX_CRAWLERS);
-    if (!doneRaw.length) { res.status(200).json({ ok: true, checkedAt: asOf, crawlers: [] }); return; }
+    if (!doneRaw.length) { res.status(200).json({ ok: true, checkedAt: asOf, crawlers: [], engagement }); return; }
 
     // 2. Resolve parent Epics (Scrapy config + customer). A Done component whose
     //    parent is an Epic is a domain row; others are Done sub-crawlers (skip).
@@ -82,7 +96,7 @@ export default async function handler(req, res) {
       });
     }
     const domainsRaw = doneRaw.filter((c) => c.fields.parent && epicCfg.has(c.fields.parent.key));
-    if (!domainsRaw.length) { res.status(200).json({ ok: true, checkedAt: asOf, crawlers: [], truncated }); return; }
+    if (!domainsRaw.length) { res.status(200).json({ ok: true, checkedAt: asOf, crawlers: [], truncated, engagement }); return; }
 
     // 3. Sub-crawlers of those domains (any status) for the health roll-up.
     const domainKeys = domainsRaw.map((d) => d.key);
@@ -144,7 +158,7 @@ export default async function handler(req, res) {
     });
 
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
-    res.status(200).json({ ok: true, checkedAt: asOf, truncated, crawlers });
+    res.status(200).json({ ok: true, checkedAt: asOf, truncated, crawlers, engagement });
   } catch (err) {
     res.status(502).json({ error: 'Failed to build the operations view.', detail: String((err && err.message) || err) });
   }

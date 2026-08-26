@@ -5,7 +5,7 @@
    framed operationally, and a mocked Freshdesk open-ticket flag. Internal-only.
    ========================================================================= */
 import React, { useEffect, useState } from 'react';
-import { Search, Activity, Ticket, ExternalLink, RefreshCw } from 'lucide-react';
+import { Search, Activity, Ticket, ExternalLink, RefreshCw, ArrowLeft } from 'lucide-react';
 import { fetchWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
 import { useChrome } from '../lib/chrome.jsx';
@@ -47,7 +47,7 @@ function relTime(iso) {
   return hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs / 24)}d ago`;
 }
 
-export default function Operations() {
+export default function Operations({ epicKey }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
@@ -58,12 +58,18 @@ export default function Operations() {
   const { setEngagement } = useChrome();
   const toast = useToast();
 
-  useEffect(() => { setEngagement(null); }, [setEngagement]);
   useEffect(() => {
     let alive = true; setData(null); setError(null);
-    fetchWithAuth('/api/operations').then((d) => alive && setData(d)).catch((e) => alive && setError(e));
+    fetchWithAuth(`/api/operations${epicKey ? `?key=${encodeURIComponent(epicKey)}` : ''}`)
+      .then((d) => alive && setData(d)).catch((e) => alive && setError(e));
     return () => { alive = false; };
-  }, [nonce]);
+  }, [nonce, epicKey]);
+
+  // Feed the shell breadcrumb: scoped → this engagement; portfolio-wide → root.
+  useEffect(() => {
+    if (epicKey && data && data.engagement) setEngagement({ key: data.engagement.key, customer: data.engagement.customer, internal: true });
+    else if (!epicKey) setEngagement(null);
+  }, [epicKey, data, setEngagement]);
 
   if (error && error.status === 403) return <AccessDenied message={error.message} />;
   if (error) {
@@ -97,24 +103,28 @@ export default function Operations() {
     { label: 'No data', value: counts.grey, color: 'var(--slate)' },
   ].filter((d) => d.value > 0);
 
+  const scoped = !!epicKey;
+  const heroLabel = scoped ? (data.engagement ? `${data.engagement.customer} · Operations` : 'Operations') : 'Zyte · Data on Demand';
+
   return (
-    <div>
-      <section className="cdp-hero">
-        <div className="cdp-hero-inner">
-          <div className="cdp-eyebrow">Zyte · Data on Demand</div>
+    <div className="cdp-wrap">
+      {scoped && <button className="cdp-backlink" onClick={() => navigate(`#/report/${epicKey}`)}><ArrowLeft size={16} /> Status report</button>}
+      <section className="cdp-report-hero">
+        <div className="rh-top"><div>
+          <div className="cdp-eyebrow" style={{ color: '#9FC0FF' }}>{heroLabel}</div>
           <h1>Operation Status</h1>
-          <p>Live health of every in-production crawler — what’s live, what’s degraded, what’s down.</p>
-          <div className="cdp-kpis">
-            <Kpi n={crawlers.length} l="In production" active={!filtersActive} onClick={clear} />
-            <Kpi n={counts.green} l="Live" dot="var(--rag-green)" active={healthSel.has('green')} onClick={() => setOnly('green')} />
-            <Kpi n={counts.amber} l="Degraded" dot="var(--rag-amber)" alert={counts.amber > 0} active={healthSel.has('amber')} onClick={() => setOnly('amber')} />
-            <Kpi n={counts.red} l="Down" dot="var(--rag-red)" alert={counts.red > 0} active={healthSel.has('red')} onClick={() => setOnly('red')} />
-            <Kpi n={openTickets} l="Open tickets" alert={openTickets > 0} active={ticketsOnly} onClick={() => setTicketsOnly((v) => !v)} />
-          </div>
+          <div className="cust">Live health of {scoped ? 'this engagement’s' : 'every'} in-production crawler{scoped ? '' : 's'} — what’s live, what’s degraded, what’s down.</div>
+        </div></div>
+        <div className="cdp-kpis" style={{ marginTop: 18 }}>
+          <Kpi n={crawlers.length} l="In production" active={!filtersActive} onClick={clear} />
+          <Kpi n={counts.green} l="Live" dot="var(--rag-green)" active={healthSel.has('green')} onClick={() => setOnly('green')} />
+          <Kpi n={counts.amber} l="Degraded" dot="var(--rag-amber)" alert={counts.amber > 0} active={healthSel.has('amber')} onClick={() => setOnly('amber')} />
+          <Kpi n={counts.red} l="Down" dot="var(--rag-red)" alert={counts.red > 0} active={healthSel.has('red')} onClick={() => setOnly('red')} />
+          <Kpi n={openTickets} l="Open tickets" alert={openTickets > 0} active={ticketsOnly} onClick={() => setTicketsOnly((v) => !v)} />
         </div>
       </section>
 
-      <div className="cdp-wrap">
+      <div>
         {crawlers.length > 0 && (
           <div className="cdp-insights" style={{ gridTemplateColumns: '1fr' }}>
             <div className="cdp-panel">

@@ -62,7 +62,8 @@ function Shell({ ready, session, route, email, onSignOut }) {
 
   const signedIn = isConfigured && session;
   const engOpen = route.name === 'report' || route.name === 'tech' || route.name === 'tech-schema'
-    || route.name === 'change' || route.name === 'schema-doc' || route.name === 'qa';
+    || route.name === 'change' || route.name === 'schema-doc' || route.name === 'qa'
+    || (route.name === 'operations' && !!route.key);
   const eng = engagement && engagement.key === route.key ? engagement : null;
   const engLabel = eng ? eng.customer : route.key;
 
@@ -79,7 +80,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   useEffect(() => {
     let t = `Portfolio · ${APP_NAME}`;
     if (!signedIn) t = `Sign in · ${APP_NAME}`;
-    else if (route.name === 'operations') t = `Operation Status · ${APP_NAME}`;
+    else if (route.name === 'operations') t = route.key ? `${engLabel} · Operation Status · ${APP_NAME}` : `Operation Status · ${APP_NAME}`;
     else if (route.name === 'report') t = `${engLabel} · Status · ${APP_NAME}`;
     else if (route.name === 'tech') t = `${engLabel} · Technical · ${APP_NAME}`;
     else if (route.name === 'tech-schema') t = `${engLabel} · Schema · ${APP_NAME}`;
@@ -99,7 +100,7 @@ function Shell({ ready, session, route, email, onSignOut }) {
   else if (route.name === 'schema-doc') body = <SchemaDoc epicKey={route.key} feedKey={route.feed} />;
   else if (route.name === 'qa') body = <QAReport epicKey={route.key} />;
   else if (route.name === 'change') body = <ChangeRequest epicKey={route.key} email={email} />;
-  else if (route.name === 'operations') body = <Operations />;
+  else if (route.name === 'operations') body = <Operations epicKey={route.key} />;
   else body = <Portfolio />;
 
   const initial = (email || '?').trim().charAt(0).toUpperCase();
@@ -120,13 +121,15 @@ function Shell({ ready, session, route, email, onSignOut }) {
 
         <nav className="cdp-nav" aria-label="Primary">
           <NavItem icon={<LayoutGrid size={17} />} label="Portfolio" active={route.name === 'portfolio'} onClick={() => navigate('')} />
-          <NavItem icon={<Activity size={17} />} label="Operation Status" active={route.name === 'operations'} onClick={() => navigate('#/operations')} />
           {engOpen && (
             <div className="cdp-navgroup">
               <div className="gt" title={engLabel}>{engLabel}</div>
               <NavItem icon={<FileText size={17} />} label="Status report" active={route.name === 'report'} onClick={() => navigate(`#/report/${route.key}`)} />
               {eng && eng.internal && (
                 <NavItem icon={<Wrench size={17} />} label="Technical view" active={route.name === 'tech' || route.name === 'tech-schema'} onClick={() => navigate(`#/tech/${route.key}`)} />
+              )}
+              {eng && eng.internal && (
+                <NavItem icon={<Activity size={17} />} label="Operation Status" active={route.name === 'operations'} onClick={() => navigate(`#/operations/${route.key}`)} />
               )}
             </div>
           )}
@@ -154,9 +157,6 @@ function Shell({ ready, session, route, email, onSignOut }) {
           </button>
           <nav className="cdp-crumbs" aria-label="Breadcrumb">
             <button onClick={() => navigate('')}>Portfolio</button>
-            {route.name === 'operations' && (
-              <><ChevronRight size={14} className="sep" /><span className="cur">Operation Status</span></>
-            )}
             {engOpen && (
               <>
                 <ChevronRight size={14} className="sep" />
@@ -181,6 +181,9 @@ function Shell({ ready, session, route, email, onSignOut }) {
             )}
             {route.name === 'qa' && (
               <><ChevronRight size={14} className="sep" /><span className="cur">QA report</span></>
+            )}
+            {route.name === 'operations' && route.key && (
+              <><ChevronRight size={14} className="sep" /><span className="cur">Operation Status</span></>
             )}
             {route.name === 'change' && (
               <><ChevronRight size={14} className="sep" /><span className="cur">Change order</span></>
