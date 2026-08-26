@@ -3,8 +3,7 @@ import { createPortal } from 'react-dom';
 import { ArrowLeft, RefreshCw, Link2, Printer, ExternalLink, Hash, Wrench, MessageSquare, X, Check, Send, FileText, Braces, ShieldCheck, Search, Activity } from 'lucide-react';
 import { fetchWithAuth, postWithAuth } from '../lib/auth.js';
 import { navigate } from '../lib/router.js';
-import { fmtDate, fmtMoney, ragToken, statusToken, feedToken, feedItems, deliveryPhaseLabel, cx, isNotStarted } from '../lib/ui.js';
-import { PieChart, ColumnChart } from '../components/charts.jsx';
+import { fmtDate, fmtMoney, ragToken, statusToken, feedItems, deliveryPhaseLabel, cx, isNotStarted } from '../lib/ui.js';
 import { useChrome } from '../lib/chrome.jsx';
 import { useToast } from '../lib/toast.jsx';
 import { ReportSkeleton } from '../components/Skeleton.jsx';
@@ -74,18 +73,6 @@ export default function Report({ epicKey, email }) {
   const unhealthyJobs = feeds.filter((f) => f.jobState && !f.jobHealthy).length;
   const c = data.commercial || {};
   const hasCommercial = c.setupFee != null || c.mrrValue != null || c.totalContractValue != null || pricedFeeds.length > 0;
-
-  // --- charts above the feed table: delivery progress + subscription ramp ---
-  const BUCKET_ORDER = ['done', 'review', 'qa', 'progress', 'blocked', 'rejected', 'todo'];
-  const bucketCounts = feeds.reduce((m, f) => { const b = f.bucket || 'todo'; m[b] = (m[b] || 0) + 1; return m; }, {});
-  const progressData = BUCKET_ORDER.filter((b) => bucketCounts[b]).map((b) => { const t = feedToken(b); return { label: t.label, value: bucketCounts[b], color: t.color }; });
-  const liveCount = bucketCounts.done || 0;
-  // Subscription $ that has commenced, timed by each feed's Production Delivery Commenced date.
-  const commenced = feeds.filter((f) => f.productionCommenced && f.subscriptionPrice != null);
-  const liveMRR = commenced.reduce((s, f) => s + f.subscriptionPrice, 0);
-  const contractedMRR = c.mrrValue != null ? c.mrrValue : feeds.reduce((s, f) => s + (f.subscriptionPrice || 0), 0);
-  const subByMonth = commenced.reduce((m, f) => { const k = f.productionCommenced.slice(0, 7); m[k] = (m[k] || 0) + f.subscriptionPrice; return m; }, {});
-  const subRamp = Object.keys(subByMonth).sort().map((k) => ({ key: k, label: monthLabel(k), value: subByMonth[k] }));
 
   // --- Data Feed Status: search + status multi-filter + sort ---
   const statusList = (() => {
@@ -225,22 +212,6 @@ export default function Report({ epicKey, email }) {
           <ListPanel title="Change Requests" items={data.changeRequests} empty="No change requests logged." />
         </div>
       </div>
-
-      {/* ---- charts: delivery progress + subscription ramp ---- */}
-      {feeds.length > 0 && (
-        <div className="cdp-insights">
-          <div className="cdp-panel">
-            <h4>Delivery progress <span className="cdp-insight-note">· {liveCount} of {feeds.length} live in production</span></h4>
-            <PieChart data={progressData} title="Delivery progress" />
-          </div>
-          <div className="cdp-panel">
-            <h4>Subscription live <span className="cdp-insight-note">· {fmtMoney(liveMRR, '$')}/mo of {fmtMoney(contractedMRR, '$')}/mo commenced</span></h4>
-            {subRamp.length > 0
-              ? <ColumnChart data={subRamp} fmt={(v) => fmtMoney(v, '$')} />
-              : <div className="cdp-empty">Subscription billing begins as feeds reach Production Delivery Commenced.</div>}
-          </div>
-        </div>
-      )}
 
       {/* ---- feed table (full width, after the narrative) ---- */}
       <div className="cdp-panel cdp-feedpanel">
@@ -566,12 +537,6 @@ function StatusDropdown({ options, selected, onToggle, onClear }) {
       )}
     </div>
   );
-}
-
-// 'YYYY-MM' → "Aug '26".
-function monthLabel(k) {
-  const d = new Date(`${k}-01T00:00:00`);
-  return isNaN(d) ? k : `${d.toLocaleDateString('en-GB', { month: 'short' })} '${k.slice(2, 4)}`;
 }
 
 function jobColor(f) {

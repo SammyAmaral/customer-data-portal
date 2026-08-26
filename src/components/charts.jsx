@@ -96,9 +96,8 @@ export function PieChart({ data, size = 172, max = 6, onSlice, title = 'Distribu
 
 // data: [{label, value, key?, color?}] — caller sorts chronologically. Vertical
 // columns for time-bucketed counts (e.g. engagements finishing per month).
-export function ColumnChart({ data, onBar, height = 150, fmt }) {
+export function ColumnChart({ data, onBar, height = 150 }) {
   const rows = data || [];
-  const f = fmt || ((v) => v);
   const peak = rows.reduce((m, d) => Math.max(m, d.value || 0), 0) || 1;
   if (!rows.length) return <div className="cdp-empty">No dated engagements yet.</div>;
   return (
@@ -111,8 +110,8 @@ export function ColumnChart({ data, onBar, height = 150, fmt }) {
             role={clickable ? 'button' : undefined} tabIndex={clickable ? 0 : undefined}
             onClick={clickable ? () => onBar(d) : undefined}
             onKeyDown={clickable ? (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onBar(d); } } : undefined}
-            title={`${d.label}: ${f(d.value)}`}>
-            <span className="cdp-col-val">{f(d.value)}</span>
+            title={`${d.label}: ${d.value}`}>
+            <span className="cdp-col-val">{d.value}</span>
             <span className="cdp-col-track"><span className="cdp-col-fill" style={{ height: `${h}%`, background: d.color || 'var(--blue)' }} /></span>
             <span className="cdp-col-label" title={d.label}>{d.label}</span>
           </div>
