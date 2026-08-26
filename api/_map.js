@@ -231,6 +231,8 @@ export function feedBucket(status) {
   if (s.includes('block')) return 'blocked';
   if (s.includes('reject') || s.includes('cancel')) return 'rejected';
   if (/(done|delivered|closed|complete)/.test(s)) return 'done';
+  // "Production Delivery Commenced" / production-run = live in production → done.
+  if (/(commenced|production run|in production|go[- ]?live)/.test(s)) return 'done';
   if (/(customer feedback|sample|approv|uat)/.test(s)) return 'review';
   if (/(qa|quality)/.test(s)) return 'qa';
   if (/(in progress|development|in dev)/.test(s)) return 'progress';
@@ -272,7 +274,7 @@ export function derivePhase(feedStatuses, kickoffDone = false) {
 // 1st Sample Sent = first transition INTO a customer-feedback/sample status.
 // Sample Approved = first transition INTO a done/approved status at/after that.
 export function sampleDatesFromChangelog(histories) {
-  let sent = null, approved = null;
+  let sent = null, approved = null, production = null;
   const rows = (histories || [])
     .filter((h) => h && h.created && Array.isArray(h.items))
     .map((h) => ({ when: h.created, items: h.items }))
@@ -283,9 +285,12 @@ export function sampleDatesFromChangelog(histories) {
       const to = (it.toString || '').toLowerCase();
       if (!sent && /(customer feedback|sample)/.test(to)) sent = r.when.slice(0, 10);
       if (!approved && /(done|delivered|approv|complete|closed)/.test(to)) approved = r.when.slice(0, 10);
+      // Production commenced = first transition into the live/production state
+      // ("Production Delivery Commenced" is the DOD go-live status).
+      if (!production && /(commenced|production run|in production|go[- ]?live)/.test(to)) production = r.when.slice(0, 10);
     }
   }
-  return { firstSampleSent: sent, sampleApproved: approved };
+  return { firstSampleSent: sent, sampleApproved: approved, productionCommenced: production };
 }
 
 /* ---- Row mappers -------------------------------------------------------- */
@@ -401,6 +406,11 @@ export function mapFeed(issue, histories, asOf) {
   const cl = sampleDatesFromChangelog(histories);
   const firstSampleSent = dateOnly(f[CF.firstSampleSentDate]) || cl.firstSampleSent;
   const sampleApproved = dateOnly(f[CF.sampleApprovedDate]) || cl.sampleApproved;
+  // Production Delivery Commenced date — when this feed went live (subscription
+  // billing commences). From the status changelog, falling back to the
+  // resolution/approval date for feeds already live/done without a captured hop.
+  const live = statusCategory === 'done' || /(commenced|production run|in production)/i.test(status);
+  const productionCommenced = cl.productionCommenced || (live ? (dateOnly(f.resolutiondate) || sampleApproved) : null);
   const created = f.created || null;
   const end = sampleApproved || f.resolutiondate || asOf;
   // Scrapy Cloud linkage. Two human-curated job pointers on the ticket:
@@ -422,6 +432,7 @@ export function mapFeed(issue, histories, asOf) {
     startDate: f[CF.startDate] || null,
     firstSampleSent,
     sampleApproved,
+    productionCommenced,
     dueDate: f.duedate || null,
     volumeBand: selectValue(f[CF.volumeBand]),
     subscriptionPrice: num(f[CF.subscriptionPrice]),
