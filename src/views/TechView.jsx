@@ -389,13 +389,17 @@ function commonPrefix(strs) {
   for (const s of strs) { let i = 0; while (i < pre.length && i < s.length && pre[i] === s[i]) i++; pre = pre.slice(0, i); }
   return pre;
 }
-function subLabels(subs) {
-  const spiders = subs.map((s) => s.spiderResolved || s.spiderName || '');
-  const pre = spiders.every(Boolean) ? commonPrefix(spiders) : '';
-  return subs.map((s, i) => {
-    const sp = spiders[i];
-    const t = pre && sp ? sp.slice(pre.length).replace(/^_+/, '').replace(/_/g, ' ').trim() : '';
-    return t || s.name || s.key;
+// A short, readable sub-crawler label from its Jira summary — the domain prefix
+// stripped (e.g. "hepsiburada.com - Category Discovery" → "Category Discovery").
+function subLabels(subs, domainName) {
+  const dn = (domainName || '').toLowerCase();
+  return subs.map((s) => {
+    const nm = s.name || s.key;
+    if (dn && nm.toLowerCase().startsWith(dn)) {
+      const rest = nm.slice(dn.length).replace(/^\s*[-–:·]\s*/, '').trim();
+      if (rest) return rest;
+    }
+    return nm;
   });
 }
 function domainSpiderPattern(f) {
@@ -421,12 +425,12 @@ function Sparkline({ series, color }) {
 }
 
 function GroupedTechCard({ f, epicKey }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const st = statusToken(f.statusCategory);
   const cfg = f.config || {};
   const subs = f.subCrawlers || [];
   const counts = f.subCounts || { total: subs.length, healthy: 0, attention: 0 };
-  const labels = subLabels(subs);
+  const labels = subLabels(subs, f.name);
   const monthlyTotal = subs.reduce((n, s) => n + (subMonthly(s, cfg.frequency) || 0), 0);
 
   return (
@@ -447,9 +451,9 @@ function GroupedTechCard({ f, epicKey }) {
       </div>
 
       <div className="cdp-metrics" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
-        <div className="cdp-metric">
+        <div className="cdp-metric" title="Estimated from each sub-crawler's latest crawl × runs per month">
           <div className="m-n">{monthlyTotal ? fmtMoney(monthlyTotal) : '—'}</div>
-          <div className="m-l">Items / month est.</div>
+          <div className="m-l">Items this month</div>
         </div>
         <div className="cdp-metric">
           <div className="m-n">{f.records != null ? fmtMoney(f.records) : '—'}</div>
@@ -497,14 +501,10 @@ function GroupedTechCard({ f, epicKey }) {
         </div>
       )}
 
-      <dl className="cdp-cfg" style={{ marginTop: 14 }}>
-        <dt>Frequency</dt><dd>{cfg.frequency || '—'}</dd>
-        <dt>Format</dt><dd>{[cfg.format, cfg.outputType].filter(Boolean).join(' · ') || '—'}</dd>
-        <dt>Data type</dt><dd>{[cfg.dataType, cfg.region].filter(Boolean).join(' · ') || '—'}</dd>
-        <dt>Crawler</dt><dd>{[cfg.crawlerType, cfg.zyteProducts].filter(Boolean).join(' · ') || '—'}</dd>
-        <dt>Spiders</dt>
-        <dd style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11.5 }}>{domainSpiderPattern(f)}</dd>
-      </dl>
+      <div className="cdp-techfoot">
+        {[cfg.frequency, cfg.format, cfg.dataType, cfg.zyteProducts].filter(Boolean).join(' · ') || 'Config not set'}
+        {' · '}spider <code>{domainSpiderPattern(f)}</code>
+      </div>
     </div>
   );
 }

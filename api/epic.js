@@ -46,13 +46,14 @@ export default async function handler(req, res) {
     const domainsRaw = children.filter((c) => c.fields && c.fields.issuetype && c.fields.issuetype.name === 'Crawling-Component');
     const tasks = children.filter((c) => c.fields && c.fields.issuetype && c.fields.issuetype.name === 'Task');
 
-    // Sub-crawlers: Crawling-Components whose parent is a domain component (one
-    // level below the Epic). One batched query covers every domain.
+    // Sub-crawlers: the Jira SUB-TASKS of each domain component (one level below
+    // the Epic). Each sub-task carries its own Spider Name (cf_14219). One
+    // batched query covers every domain.
     let subsRaw = [];
     if (domainsRaw.length) {
       try {
         subsRaw = await fetchIssues({
-          jql: `parent in (${domainsRaw.map((d) => d.key).join(',')}) AND issuetype = "Crawling-Component" ORDER BY created ASC`,
+          jql: `parent in (${domainsRaw.map((d) => d.key).join(',')}) AND issuetype = "Sub-task" ORDER BY created ASC`,
           fields: [...FEED_FIELDS, 'parent'],
         });
       } catch { subsRaw = []; }

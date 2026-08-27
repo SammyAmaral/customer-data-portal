@@ -398,6 +398,10 @@ button.cdp-kpi:hover{background:rgba(255,255,255,.13);border-color:rgba(255,255,
 .cdp-alert{font-size:11px;font-weight:700;border-radius:6px;padding:2px 8px;white-space:nowrap;}
 .cdp-alert.high{color:#fff;background:var(--rag-red);}
 .cdp-alert.warn{color:#7A531A;background:#FFF1D6;border:1px solid #F3D9A6;}
+/* grouped domain card footer (config · spider pattern) */
+.cdp-techfoot{margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:12px;color:var(--slate);line-height:1.5;}
+.cdp-techfoot code{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--ink);}
+.cdp-subtable th,.cdp-subtable td{font-size:12.5px;}
 /* domain sub-crawler roll-up */
 .cdp-subtoggle{display:inline-flex;align-items:center;gap:6px;margin:14px 0 2px;background:none;border:0;color:var(--blue);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;padding:4px 0;}
 .cdp-subtoggle:hover{text-decoration:underline;}
