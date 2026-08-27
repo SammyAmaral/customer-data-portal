@@ -12,10 +12,11 @@
    ========================================================================= */
 import { getUserScope, requireJira, fetchIssue, fetchIssues } from './_access.js';
 import {
-  EPIC_DETAIL_FIELDS, FEED_FIELDS, CF, firstLink, parseZyteId, mapEpicDetail, mapFeed, derivePhase, PHASES,
+  EPIC_DETAIL_FIELDS, FEED_FIELDS, CF, firstLink, cleanText, parseZyteId, mapEpicDetail, mapFeed, derivePhase, PHASES,
 } from './_map.js';
 import { getSowPricing, domainKey } from './sow.js';
 import { enrichFeeds } from './scrapy.js';
+import { loadOpenTickets, freshdeskCount, freshdeskConfigured } from './freshdesk.js';
 
 export default async function handler(req, res) {
   const scope = await getUserScope(req);
@@ -126,6 +127,21 @@ export default async function handler(req, res) {
       }
     }
 
+    // Freshdesk: open support tickets linked to this engagement (best-effort).
+    // Engagement link = "Zyte Data Org Comms" (cf_13577/13560) matched against
+    // the ticket custom field; per-domain tickets also counted by domain/key.
+    let support = { open: 0, configured: freshdeskConfigured };
+    try {
+      const fdTickets = await loadOpenTickets();
+      if (fdTickets) {
+        const commsKey = cleanText(epic.fields[CF.dataOrgComms]) || cleanText(epic.fields[CF.dataOrgComms2]) || null;
+        const fdId = cleanText(epic.fields[CF.freshdeskId]) || null;
+        const candidates = [commsKey, fdId, key, ...feeds.map((f) => f.key), ...feeds.map((f) => f.name)];
+        support = { open: freshdeskCount(fdTickets, candidates, feeds.map((f) => f.name)), configured: true };
+      }
+      if (scope.internal) { const u = firstLink(epic.fields[CF.freshdeskUrl]); if (u) support.url = u; }
+    } catch { /* best-effort */ }
+
     const kickoffDone = tasks.some((t) =>
       /kickoff|solution design/i.test((t.fields.summary) || '') &&
       /done|complete|closed/i.test(t.fields.status ? t.fields.status.name : ''));
@@ -138,6 +154,7 @@ export default async function handler(req, res) {
     detail.phase = { index: phaseIndex, steps: PHASES };
     detail.sowPricingStatus = sowStatus;
     detail.scrapyStatus = scrapyStatus;
+    detail.support = support;
     // The technical config + crawl alerts/diagnostics are internal-only.
     if (scope.internal) detail.scrapyDebug = scrapyDebug;
     else for (const f of feeds) {

@@ -45,6 +45,11 @@ export const CF = {
   zyteDataOrg: 'customfield_13556',       // "Zyte Data Org" — app.zyte.com/o/{org}
   scProdProject: 'customfield_14254',     // "Scrapycloud Production Project" — app.zyte.com/p/{id}
   scDevProject: 'customfield_14255',      // "Scrapycloud Development Project" — app.zyte.com/p/{id}
+  // --- Freshdesk linkage (engagement → support) ---
+  dataOrgComms: 'customfield_13577',      // "Zyte Data Org Comms" — engagement→Freshdesk match key
+  dataOrgComms2: 'customfield_13560',     // duplicate-named "Zyte Data Org Comms" field (fallback)
+  freshdeskId: 'customfield_13558',       // "FreshDesk ID"
+  freshdeskUrl: 'customfield_13559',      // "FreshDesk URL"
   subscriptionPrice: 'customfield_13599', // per-feed price (sums to the Epic MRR Value)
   // --- technical config (internal Technical View) ---
   feedSchema: 'customfield_13726',        // Feed Schema (bitbucket JSON schema link)
@@ -88,6 +93,7 @@ export const EPIC_DETAIL_FIELDS = [
   CF.sfOpportunity, CF.sows, CF.satForm, CF.satLink,
   CF.setupFee, CF.mrrValue, CF.mrrPeriods, CF.margin,
   CF.zyteDataOrg, CF.scProdProject, CF.scDevProject,
+  CF.dataOrgComms, CF.dataOrgComms2, CF.freshdeskId, CF.freshdeskUrl,
 ];
 
 export const CHILD_FIELDS = ['summary', 'status', 'issuetype', 'created', 'resolutiondate'];

@@ -137,6 +137,9 @@ export default function Report({ epicKey, email }) {
             <dt>Start date</dt><dd>{fmtDate(data.startDate)}</dd>
             <dt>Planned finish</dt><dd>{fmtDate(data.plannedFinish)}</dd>
             <dt>Data feeds</dt><dd>{data.feedCount}</dd>
+            {data.support && data.support.open > 0 && (<><dt>Open support tickets</dt><dd>{data.support.url
+              ? <a href={data.support.url} target="_blank" rel="noreferrer">{data.support.open} open ↗</a>
+              : `${data.support.open} open`}</dd></>)}
             {totalRecords > 0 && (<><dt>Records delivered</dt><dd>{fmtMoney(totalRecords)}</dd></>)}
             {data.effortRag && (<><dt>Effort RAG</dt><dd><Light rag={data.effortRag} /></dd></>)}
           </dl>

@@ -2,7 +2,7 @@
    Operations — a live operational board of in-production crawlers (every
    domain whose Status-report status is Done). Reads /api/operations: a
    traffic-light health per crawler, the same telemetry as the Technical view
-   framed operationally, and a mocked Freshdesk open-ticket flag. Internal-only.
+   framed operationally, and a live Freshdesk open-ticket flag. Internal-only.
    ========================================================================= */
 import React, { useEffect, useState } from 'react';
 import { Search, Activity, Ticket, ExternalLink, RefreshCw, ArrowLeft } from 'lucide-react';
@@ -155,6 +155,10 @@ export default function Operations({ epicKey }) {
           {filtersActive && <button className="cdp-linkbtn" onClick={clear}>Clear</button>}
         </div>
 
+        {data.freshdeskConfigured === false && (
+          <div className="cdp-note" style={{ marginTop: 4 }}>Freshdesk isn’t connected — set <code>FRESHDESK_DOMAIN</code> and <code>FRESHDESK_API_KEY</code> in Vercel to show live tickets.</div>
+        )}
+
         {shown.length === 0 ? (
           <div className="cdp-emptystate">
             <Activity size={28} style={{ color: 'var(--slate)', marginBottom: 10 }} />
@@ -215,7 +219,10 @@ function OpsRow({ c }) {
       <td className="center">{c.jobFinished || '—'}</td>
       <td className="center">
         {fd.open
-          ? <span className={cx('cdp-fd', urgent && 'urgent')} title={`Freshdesk #${fd.id} · ${fd.priority} · ${fd.subject} (mock)`}><Ticket size={12} /> #{fd.id}</span>
+          ? <a className={cx('cdp-fd', urgent && 'urgent')} href={fd.url} target={fd.url ? '_blank' : undefined} rel="noreferrer"
+              title={`Freshdesk #${fd.id} · ${fd.priority} · ${fd.subject}${fd.count > 1 ? ` · +${fd.count - 1} more` : ''}`}>
+              <Ticket size={12} /> #{fd.id}{fd.count > 1 ? ` +${fd.count - 1}` : ''}
+            </a>
           : <span style={{ color: 'var(--rag-green)' }} title="No open operations ticket">—</span>}
       </td>
       <td className="center">

@@ -16,6 +16,7 @@
 import { getUserScope, requireJira, fetchIssues, fetchIssue, PROJECT } from './_access.js';
 import { CF, FEED_FIELDS, mapFeed, parseZyteId, customerName, cleanText } from './_map.js';
 import { enrichFeeds } from './scrapy.js';
+import { loadOpenTickets, freshdeskFor, freshdeskConfigured } from './freshdesk.js';
 
 const MAX_CRAWLERS = 250; // safety bound on how many Done crawlers we enrich
 
@@ -33,18 +34,6 @@ function healthOf(units) {
   if (!producing) return 'red';
   if (known.every((u) => u.jobHealthy) && !known.some(hasAlert) && !known.some(isZero)) return 'green';
   return 'amber';
-}
-
-// Deterministic mock Freshdesk ticket (no RNG). Swap the body for the real
-// Freshdesk API later; the shape stays the same.
-function hash(s) { let h = 2166136261; for (let i = 0; i < String(s).length; i++) { h ^= String(s).charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
-const FD_PRIORITY = ['Low', 'Medium', 'High', 'Urgent'];
-const FD_SUBJECTS = ['Missing fields in latest delivery', 'Fewer items than expected', 'Anti-bot blocks on recent runs', 'Schema change flagged by customer', 'Delivery delayed / stale data'];
-function mockFreshdesk(key, health) {
-  const h = hash(key);
-  const open = health === 'green' ? (h % 8 === 0) : (h % 3 !== 0);
-  if (!open) return { open: false };
-  return { open: true, id: 40000 + (h % 9000), priority: health === 'red' ? 'Urgent' : FD_PRIORITY[h % 4], subject: FD_SUBJECTS[h % FD_SUBJECTS.length] };
 }
 
 export default async function handler(req, res) {
@@ -128,6 +117,9 @@ export default async function handler(req, res) {
     }));
 
     // 5. Roll up subs onto domains + compute health + Freshdesk mock.
+    // Live Freshdesk open tickets (best-effort; null when unconfigured/erroring).
+    const fdTickets = await loadOpenTickets().catch(() => null);
+
     const crawlers = domains.map((d) => {
       const subs = subFeeds.filter((s) => s.parentDomainKey === d.key);
       const units = subs.length ? subs : [d];
@@ -153,12 +145,12 @@ export default async function handler(req, res) {
         status: d.status, statusCategory: d.statusCategory, health,
         records, recordsRecent, jobErrors, jobState: d.jobState || null, jobHealthy, jobFinished,
         subCounts, series: d.series || null, alerts,
-        freshdesk: mockFreshdesk(d.key, health),
+        freshdesk: freshdeskFor(fdTickets, [d.key, d.name], d.name),
       };
     });
 
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=600');
-    res.status(200).json({ ok: true, checkedAt: asOf, truncated, crawlers, engagement });
+    res.status(200).json({ ok: true, checkedAt: asOf, truncated, crawlers, engagement, freshdeskConfigured });
   } catch (err) {
     res.status(502).json({ error: 'Failed to build the operations view.', detail: String((err && err.message) || err) });
   }
